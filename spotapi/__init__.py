@@ -1,3 +1,4 @@
+from spotapi.dsl import SpotifySession
 from spotapi.artist import *
 from spotapi.client import *
 from spotapi.login import *

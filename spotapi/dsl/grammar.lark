@@ -1,0 +1,69 @@
+// Spotify DSL Grammar (v3)
+//
+// Three top-level forms:
+//   action state_modifier*    — play, pause, skip, like, etc. + volume/mode/device
+//   query query_modifier*     — search, info, library, etc. + limit/offset
+//   state_modifier+           — standalone state changes (volume 0.7, mode shuffle)
+//
+// State modifiers do NOT compose with queries. Query modifiers do NOT compose with actions.
+
+start: action state_modifier*
+     | query query_modifier*
+     | state_modifier+
+
+// === Actions (mutate state) ===
+
+?action: "play" target ("in" target)?     -> play
+       | "pause"                           -> pause
+       | "resume"                          -> resume
+       | "skip" SIGNED_NUMBER?             -> skip
+       | "seek" NUMBER                     -> seek
+       | "queue" target                    -> enqueue
+       | "like" target                     -> like
+       | "unlike" target                   -> unlike
+       | "follow" target                   -> follow
+       | "unfollow" target                 -> unfollow
+       | "save" target                     -> save
+       | "unsave" target                   -> unsave
+       | "add" target "to" target          -> playlist_add
+       | "remove" target "from" target     -> playlist_remove
+       | "create" "playlist" ESCAPED_STRING -> playlist_create
+       | "delete" "playlist" target        -> playlist_delete
+
+// === Queries (read state) ===
+
+?query: "search" ESCAPED_STRING type?      -> search
+      | "now" "playing"                    -> now_playing
+      | "get" "queue"                      -> get_queue
+      | "get" "devices"                    -> get_devices
+      | "library" type?                    -> library
+      | "info" target                      -> info
+      | "history"                          -> history
+      | "recommend" NUMBER? "for" target   -> recommend
+
+// === State Modifiers (actions only, or standalone) ===
+
+?state_modifier: "volume" NUMBER            -> volume
+               | "mode" MODE              -> mode
+               | "on" ESCAPED_STRING      -> device
+               | "device" ESCAPED_STRING  -> device
+
+// === Query Modifiers (queries only) ===
+
+?query_modifier: "limit" NUMBER            -> limit
+               | "offset" NUMBER           -> offset
+
+// === Shared ===
+
+?target: URI | ESCAPED_STRING
+
+type: TYPE_KW
+TYPE_KW: "tracks"i | "artists"i | "albums"i | "playlists"i
+MODE: "normal"i | "shuffle"i | "repeat"i
+URI: /spotify:[a-z]+:[a-zA-Z0-9]+/
+
+%import common.ESCAPED_STRING
+%import common.SIGNED_NUMBER
+%import common.NUMBER
+%import common.WS
+%ignore WS

@@ -289,3 +289,27 @@ class Song:
 
         if resp.fail:
             raise SongError("Could not like song", error=resp.error.string)
+
+    def unlike_song(self, song_id: str, /) -> None:
+        if not self.playlist or not hasattr(self.playlist, "playlist_id"):
+            raise ValueError("Playlist not set")
+
+        if song_id and "track" in song_id:
+            song_id = song_id.split("track:")[1]
+
+        url = "https://api-partner.spotify.com/pathfinder/v1/query"
+        payload = {
+            "variables": {"libraryItemUris": [f"spotify:track:{song_id}"]},
+            "operationName": "removeFromLibrary",
+            "extensions": {
+                "persistedQuery": {
+                    "version": 1,
+                    "sha256Hash": self.base.part_hash("removeFromLibrary"),
+                }
+            },
+        }
+
+        resp = self.base.client.post(url, json=payload, authenticate=True)
+
+        if resp.fail:
+            raise SongError("Could not unlike song", error=resp.error.string)

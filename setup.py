@@ -11,6 +11,7 @@ __install_require__ = [
     "validators",
     "pyotp",
     "beautifulsoup4",
+    "lark",
 ]
 __extras__ = {
     "websocket": ["websockets"],
@@ -26,6 +27,7 @@ setup(
     author="Aran",
     description=__description__,
     packages=find_packages(),
+    package_data={"spotapi": ["dsl/grammar.lark"]},
     install_requires=__install_require__,
     extras_require=__extras__,
     keywords=[
