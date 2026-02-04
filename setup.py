@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-__description__ = "A sleek API wrapper for Spotify's private API"
+__description__ = "DSL-driven Spotify control via private API (fork of SpotAPI by Aran)"
 __install_require__ = [
     "requests",
     "colorama",
@@ -59,5 +59,6 @@ setup(
     ],
     long_description=long_description,
     long_description_content_type="text/markdown",
+    python_requires=">=3.10",
     version="1.2.7",
 )
