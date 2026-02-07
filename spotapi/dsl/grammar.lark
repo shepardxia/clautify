@@ -18,7 +18,7 @@ start: action state_modifier*
        | "resume"                          -> resume
        | "skip" SIGNED_NUMBER?             -> skip
        | "seek" NUMBER                     -> seek
-       | "queue" target                    -> enqueue
+       | "queue" target                    -> queue
        | "like" target                     -> like
        | "unlike" target                   -> unlike
        | "follow" target                   -> follow

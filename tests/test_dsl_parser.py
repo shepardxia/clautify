@@ -65,13 +65,13 @@ class TestSeek:
 class TestQueue:
     def test_queue_uri(self):
         assert parse("queue spotify:track:abc123") == {
-            "action": "enqueue",
+            "action": "queue",
             "target": "spotify:track:abc123",
         }
 
     def test_queue_string(self):
         assert parse('queue "Stairway to Heaven"') == {
-            "action": "enqueue",
+            "action": "queue",
             "target": "Stairway to Heaven",
         }
 
@@ -170,7 +170,7 @@ class TestPlaylistCRUD:
 
 class TestStateModifiers:
     def test_standalone_volume(self):
-        assert parse("volume 0.7") == {"action": "set", "volume": 0.7}
+        assert parse("volume 70") == {"action": "set", "volume": 70.0}
 
     def test_standalone_mode_shuffle(self):
         assert parse("mode shuffle") == {"action": "set", "mode": "shuffle"}
@@ -188,33 +188,33 @@ class TestStateModifiers:
         assert parse('device "Bedroom"') == {"action": "set", "device": "Bedroom"}
 
     def test_multiple_standalone_modifiers(self):
-        assert parse('volume 0.5 on "Bedroom"') == {
+        assert parse('volume 50 on "Bedroom"') == {
             "action": "set",
-            "volume": 0.5,
+            "volume": 50.0,
             "device": "Bedroom",
         }
 
     def test_composed_with_play(self):
-        assert parse('play "jazz" volume 0.7') == {
+        assert parse('play "jazz" volume 70') == {
             "action": "play",
             "target": "jazz",
-            "volume": 0.7,
+            "volume": 70.0,
         }
 
     def test_composed_with_play_multiple(self):
-        assert parse('play "chill vibes" mode shuffle volume 0.5 on "Living Room"') == {
+        assert parse('play "chill vibes" mode shuffle volume 50 on "Living Room"') == {
             "action": "play",
             "target": "chill vibes",
             "mode": "shuffle",
-            "volume": 0.5,
+            "volume": 50.0,
             "device": "Living Room",
         }
 
     def test_composed_with_skip(self):
-        assert parse("skip 2 volume 0.8") == {
+        assert parse("skip 2 volume 80") == {
             "action": "skip",
             "n": 2,
-            "volume": 0.8,
+            "volume": 80.0,
         }
 
     def test_play_with_mode(self):
@@ -363,7 +363,7 @@ class TestGrammarEnforcement:
     def test_state_modifier_on_query_is_error(self):
         """State modifiers should NOT compose with queries."""
         with pytest.raises(Exception):
-            parse('search "jazz" volume 0.7')
+            parse('search "jazz" volume 70')
 
     def test_query_modifier_on_action_is_error(self):
         """Query modifiers should NOT compose with actions."""

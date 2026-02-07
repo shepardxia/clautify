@@ -4,20 +4,15 @@ __description__ = "DSL-driven Spotify control via private API (fork of SpotAPI b
 __install_require__ = [
     "requests",
     "colorama",
-    "Pillow",
     "readerwriterlock",
     "tls_client",
     "typing_extensions",
-    "validators",
     "pyotp",
     "beautifulsoup4",
     "lark",
+    "websockets",
 ]
-__extras__ = {
-    "websocket": ["websockets"],
-    "redis": ["redis"],
-    "pymongo": ["pymongo"],
-}
+__extras__ = {}
 
 with open("README.md", "r") as f:
     long_description = f.read()

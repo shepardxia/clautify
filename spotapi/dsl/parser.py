@@ -45,7 +45,7 @@ class SpotifyTransformer(Transformer):
     # --- actions ---
 
     def play(self, items):
-        target = items[0] if items else None
+        target = items[0]
         context = items[1] if len(items) > 1 else None
         return self._cmd("play", target=target, context=context)
 
@@ -61,8 +61,8 @@ class SpotifyTransformer(Transformer):
     def seek(self, items):
         return self._cmd("seek", position_ms=items[0])
 
-    def enqueue(self, items):
-        return self._cmd("enqueue", target=items[0])
+    def queue(self, items):
+        return self._cmd("queue", target=items[0])
 
     def like(self, items):
         return self._cmd("like", target=items[0])

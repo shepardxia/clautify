@@ -8,39 +8,46 @@ A command-driven interface for Spotify built on top of [SpotAPI](https://github.
 
 **Note**: This project is intended solely for educational purposes. Accessing private endpoints without authorization may violate Spotify's terms of service.
 
-## Quick Start
+## Setup
+
+### 1. Install
+
+```bash
+pip install -e ".[websocket,redis,pymongo]"
+```
+
+Requires Python 3.10+.
+
+### 2. Get your `sp_dc` cookie
+
+1. Open [open.spotify.com](https://open.spotify.com) in your browser and log in
+2. Open DevTools (`F12`) → **Application** → **Cookies** → `https://open.spotify.com`
+3. Copy the value of `sp_dc`
+
+### 3. Save it (one-time)
 
 ```python
 from spotapi.dsl import SpotifySession
-from spotapi.login import Login
 
-login = Login.from_cookies(cookie_dump, cfg)
-session = SpotifySession(login)
+SpotifySession.setup("paste_your_sp_dc_here")
+# Saved to ~/.config/spotapi/session.json
+```
 
-# Playback
-session.run('play "Bohemian Rhapsody" volume 0.7 mode shuffle')
-session.run('skip 2')
-session.run('pause')
+The `sp_dc` cookie typically lasts ~1 year. Re-run `setup()` if it expires.
 
-# Search & discovery
-result = session.run('search "jazz" artists limit 5')
-result = session.run('info spotify:artist:1dfeR4HaWDbWqFHLkxsg1d')
-result = session.run('recommend 10 for spotify:playlist:37i9dQZF1DXcBWIGoYBM5M')
+### 4. Use it
 
-# Playlist management
-session.run('create playlist "Road Trip"')
-session.run('add spotify:track:4uLU6hMCjMI75M1A2tKUQC to spotify:playlist:abc123')
-session.run('like spotify:track:4uLU6hMCjMI75M1A2tKUQC')
+```python
+session = SpotifySession.from_config()
 
-# Standalone state changes
-session.run('volume 0.5')
-session.run('mode repeat')
-session.run('device "Kitchen Speaker"')
+session.run('play "Bohemian Rhapsody" volume 70 mode shuffle')
+session.run('search "jazz" artists limit 5')
+session.run('add spotify:track:abc to spotify:playlist:def')
 
 session.close()
 ```
 
-Every `run()` call returns a dict with `"status": "ok"` plus command-specific data, or raises `DSLError` on failure.
+Every `run()` call returns `{"status": "ok", ...}` or raises `DSLError`.
 
 ## Command Reference
 
@@ -56,16 +63,16 @@ Every `run()` call returns a dict with `"status": "ok"` plus command-specific da
 | `like` / `unlike` | `like spotify:track:abc` |
 | `follow` / `unfollow` | `follow spotify:artist:abc` |
 | `save` / `unsave` | `save spotify:playlist:abc` |
-| `add … to` | `add spotify:track:abc to spotify:playlist:def` |
-| `remove … from` | `remove spotify:track:abc from spotify:playlist:def` |
+| `add ... to` | `add spotify:track:abc to spotify:playlist:def` |
+| `remove ... from` | `remove spotify:track:abc from spotify:playlist:def` |
 | `create playlist` | `create playlist "Road Trip"` |
 | `delete playlist` | `delete playlist spotify:playlist:abc` |
 
 **State modifiers** compose with any action (or stand alone):
 
 ```
-play "jazz" volume 0.7 mode shuffle on "Kitchen Speaker"
-volume 0.5 mode repeat
+play "jazz" volume 70 mode shuffle on "Kitchen Speaker"
+volume 50 mode repeat
 ```
 
 ### Queries (read state)
@@ -78,7 +85,7 @@ volume 0.5 mode repeat
 | `get devices` | `get devices` |
 | `library` | `library playlists limit 20` |
 | `info` | `info spotify:track:abc` |
-| `history` | `history` |
+| `history` | `history limit 10` |
 | `recommend` | `recommend 10 for spotify:playlist:abc` |
 
 **Query modifiers**: `limit N` and `offset N` compose with queries only.
@@ -88,71 +95,26 @@ volume 0.5 mode repeat
 - Targets are either Spotify URIs (`spotify:track:abc`) or quoted strings (`"Bohemian Rhapsody"`)
 - State modifiers (`volume`, `mode`, `device`/`on`) only compose with actions
 - Query modifiers (`limit`, `offset`) only compose with queries
-- Mixing them is a parse error — `search "jazz" volume 0.5` will fail
-
-## Architecture
-
-```
-"play 'jazz' volume 0.7"
-        │
-        ▼
-   ┌─────────┐
-   │ grammar  │  grammar.lark — Lark Earley parser
-   │  .lark   │
-   └────┬─────┘
-        │  parse tree
-        ▼
-   ┌─────────┐
-   │ parser   │  SpotifyTransformer → flat dict
-   │  .py     │  {"action":"play","target":"jazz","volume":0.7}
-   └────┬─────┘
-        │  command dict
-        ▼
-   ┌──────────┐
-   │ executor  │  Dispatches to SpotAPI classes
-   │  .py      │  Player, Song, Artist, Playlist (lazy init)
-   └────┬──────┘
-        │  result dict
-        ▼
-   {"status":"ok","action":"play","resolved_uri":"spotify:track:..."}
-```
-
-- **Player** (WebSocket + threads) is only created on the first playback command
-- **Song** and **Artist** are lazily initialized on first use
-- Quoted string targets trigger an automatic search → resolve to URI
-- All SpotAPI exceptions are wrapped in `DSLError` with the original command attached
-
-## Installation
-
-```bash
-pip install -e ".[websocket,redis,pymongo]"
-```
-
-Requires Python 3.10+ (uses `match` statements).
+- Mixing them is a parse error
 
 ## Low-Level API
 
-The full SpotAPI interface remains available for direct use. See the original docs:
+The full SpotAPI interface remains available. See the original docs:
 
 - [Artist](./docs/artist.md) · [Album](./docs/album.md) · [Song](./docs/song.md) · [Playlist](./docs/playlist.md) · [Player](./docs/player.md)
 - [Login](./docs/login.md) · [Password](./docs/password.md) · [Creator](./docs/creator.md) · [Family](./docs/family.md)
 - [Public](./docs/public.md) · [Status](./docs/status.md) · [User](./docs/user.md)
 
-### Cookie-based Authentication
+For fresh login with captcha solver (instead of cookie import):
 
 ```python
 from spotapi import Login, Config, NoopLogger, solver_clients
 
-cfg = Config(
-    solver=solver_clients.Capsolver("YOUR_API_KEY"),
-    logger=NoopLogger(),
-)
-
-instance = Login(cfg, "YOUR_PASSWORD", email="YOUR_EMAIL")
-instance.login()
+cfg = Config(solver=solver_clients.Capsolver("YOUR_API_KEY"), logger=NoopLogger())
+login = Login(cfg, "PASSWORD", email="EMAIL")
+login.login()
+session = SpotifySession(login)
 ```
-
-Or import cookies directly — see [upstream SpotAPI](https://github.com/Aran404/SpotAPI) for full details.
 
 ## Credits
 

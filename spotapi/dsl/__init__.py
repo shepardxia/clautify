@@ -2,23 +2,40 @@
 
 Usage:
     from spotapi.dsl import SpotifySession
-    from spotapi.login import Login
 
-    login = Login.from_cookies(cookie_dump, cfg)
-    session = SpotifySession(login)
+    # One-time setup — paste sp_dc from browser dev tools:
+    SpotifySession.setup("AQBF7J2...")
 
-    result = session.run('play "Bohemian Rhapsody" volume 0.7 mode shuffle')
+    # Every subsequent use — auto-loads from ~/.config/spotapi/session.json:
+    session = SpotifySession.from_config()
+
+    result = session.run('play "Bohemian Rhapsody" volume 70 mode shuffle')
     result = session.run('search "jazz" artists limit 5')
     result = session.run('add spotify:track:abc to "Road Trip"')
 
     session.close()
 """
 
-from typing import Any, Dict
+import json
+from pathlib import Path
+from typing import Any, Dict, Union
+
+from lark.exceptions import UnexpectedInput
 
 from spotapi.dsl.parser import parse
 from spotapi.dsl.executor import SpotifyExecutor, DSLError
 from spotapi.login import Login
+from spotapi.types import Config
+from spotapi.utils.logger import NoopLogger
+
+_VALID_COMMANDS = (
+    "play, pause, resume, skip, seek, queue, like, unlike, follow, unfollow, "
+    "save, unsave, add...to, remove...from, create playlist, delete playlist, "
+    "search, now playing, get queue, get devices, library, info, history, recommend"
+)
+
+_DEFAULT_CONFIG_DIR = Path.home() / ".config" / "spotapi"
+_DEFAULT_SESSION_PATH = _DEFAULT_CONFIG_DIR / "session.json"
 
 __all__ = ["SpotifySession", "parse", "DSLError"]
 
@@ -31,8 +48,57 @@ class SpotifySession:
     first playback command.
     """
 
-    def __init__(self, login: Login):
-        self._executor = SpotifyExecutor(login)
+    def __init__(self, login: Login, eager: bool = True):
+        self._executor = SpotifyExecutor(login, eager=eager)
+
+    @classmethod
+    def setup(
+        cls,
+        sp_dc: str,
+        *,
+        identifier: str = "default",
+        path: Union[str, Path, None] = None,
+    ) -> Path:
+        """Save an sp_dc cookie to disk for future auto-loading.
+
+        Get sp_dc from browser dev tools: Application → Cookies → sp_dc.
+        Only needs to be called once (cookie typically lasts ~1 year).
+        """
+        if not sp_dc:
+            raise DSLError("sp_dc cookie value is required")
+        dest = Path(path) if path else _DEFAULT_SESSION_PATH
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        data = {"identifier": identifier, "cookies": {"sp_dc": sp_dc}}
+        dest.write_text(json.dumps(data, indent=2))
+        return dest
+
+    @classmethod
+    def from_config(
+        cls,
+        path: Union[str, Path, None] = None,
+        *,
+        eager: bool = True,
+    ) -> "SpotifySession":
+        """Create a session from a saved config file.
+
+        Loads cookies from ~/.config/spotapi/session.json (or custom path).
+        Call SpotifySession.setup() first if no config exists.
+        """
+        src = Path(path) if path else _DEFAULT_SESSION_PATH
+        if not src.exists():
+            raise DSLError(
+                f"No session file found at {src}. "
+                "Run SpotifySession.setup('your_sp_dc_cookie') first."
+            )
+        raw = json.loads(src.read_text())
+        dump = {
+            "identifier": raw.get("identifier", "default"),
+            "password": "",
+            "cookies": raw["cookies"],
+        }
+        cfg = Config(logger=NoopLogger())
+        login = Login.from_cookies(dump, cfg)
+        return cls(login, eager=eager)
 
     def run(self, command: str) -> Dict[str, Any]:
         """Parse and execute a DSL command string.
@@ -44,6 +110,10 @@ class SpotifySession:
         """
         try:
             parsed = parse(command)
+        except UnexpectedInput as e:
+            raise DSLError(
+                f"Invalid command: '{command}'. Valid commands: {_VALID_COMMANDS}"
+            ) from e
         except Exception as e:
             raise DSLError(f"Parse error: {e}") from e
 

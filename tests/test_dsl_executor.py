@@ -12,7 +12,7 @@ def login():
 
 @pytest.fixture
 def executor(login):
-    return SpotifyExecutor(login)
+    return SpotifyExecutor(login, eager=False)
 
 
 # ── Lazy Initialization ──────────────────────────────────────────
@@ -114,11 +114,11 @@ class TestActions:
         mock_player.seek_to.assert_called_once_with(30000)
 
     @patch("spotapi.dsl.executor.Player")
-    def test_enqueue_uri(self, MockPlayer, executor):
+    def test_queue_uri(self, MockPlayer, executor):
         mock_player = MagicMock()
         MockPlayer.return_value = mock_player
 
-        result = executor.execute({"action": "enqueue", "target": "spotify:track:abc"})
+        result = executor.execute({"action": "queue", "target": "spotify:track:abc"})
 
         mock_player.add_to_queue.assert_called_once_with("spotify:track:abc")
 
@@ -243,7 +243,7 @@ class TestStateModifiers:
         mock_player = MagicMock()
         MockPlayer.return_value = mock_player
 
-        executor.execute({"action": "pause", "volume": 0.7})
+        executor.execute({"action": "pause", "volume": 70})
 
         mock_player.pause.assert_called_once()
         mock_player.set_volume.assert_called_once_with(0.7)
@@ -280,23 +280,30 @@ class TestStateModifiers:
 
     @patch("spotapi.dsl.executor.Player")
     def test_device_transfer(self, MockPlayer, executor):
+        mock_device = MagicMock()
+        mock_device.name = "Living Room"
+        mock_device.device_id = "abc123hex"
+        mock_devices = MagicMock()
+        mock_devices.devices = {"0": mock_device}
+
         mock_player = MagicMock()
         mock_player.device_id = "origin_device"
+        mock_player.device_ids = mock_devices
         MockPlayer.return_value = mock_player
 
         executor.execute({"action": "set", "device": "Living Room"})
 
-        mock_player.transfer_player.assert_called_once_with("origin_device", "Living Room")
+        mock_player.transfer_player.assert_called_once_with("origin_device", "abc123hex")
 
     @patch("spotapi.dsl.executor.Player")
     def test_standalone_volume(self, MockPlayer, executor):
         mock_player = MagicMock()
         MockPlayer.return_value = mock_player
 
-        result = executor.execute({"action": "set", "volume": 0.5})
+        result = executor.execute({"action": "set", "volume": 50})
 
         mock_player.set_volume.assert_called_once_with(0.5)
-        assert result["volume"] == 0.5
+        assert result["volume"] == 50
 
 
 # ── Compound Operations ──────────────────────────────────────────
@@ -518,7 +525,7 @@ class TestInfoQuery:
         mock_pl.get_playlist_info.assert_called_once()
 
     def test_info_requires_uri(self, executor):
-        with pytest.raises(DSLError, match="info requires a Spotify URI"):
+        with pytest.raises(DSLError, match="Use search to find URIs first"):
             executor.execute({"query": "info", "target": "some string"})
 
     def test_info_unknown_kind(self, executor):
@@ -526,14 +533,14 @@ class TestInfoQuery:
             executor.execute({"query": "info", "target": "spotify:show:abc"})
 
 
-# ── Enqueue with String ──────────────────────────────────────────
+# ── Queue with String ────────────────────────────────────────────
 
 
-class TestEnqueueString:
+class TestQueueString:
     @patch("spotapi.dsl.executor.Player")
     @patch("spotapi.dsl.executor.Song")
     @patch("spotapi.dsl.executor.PrivatePlaylist")
-    def test_enqueue_string_resolves(self, MockPP, MockSong, MockPlayer, executor):
+    def test_queue_string_resolves(self, MockPP, MockSong, MockPlayer, executor):
         mock_song = MagicMock()
         mock_song.query_songs.return_value = {
             "data": {
@@ -551,7 +558,7 @@ class TestEnqueueString:
         mock_player = MagicMock()
         MockPlayer.return_value = mock_player
 
-        result = executor.execute({"action": "enqueue", "target": "stairway to heaven"})
+        result = executor.execute({"action": "queue", "target": "stairway to heaven"})
 
         mock_song.query_songs.assert_called_once_with("stairway to heaven", limit=1)
         mock_player.add_to_queue.assert_called_once_with("spotify:track:resolved")
@@ -595,7 +602,7 @@ class TestEndToEnd:
         mock_player = MagicMock()
         MockPlayer.return_value = mock_player
 
-        cmd = parse("volume 0.7 mode shuffle")
+        cmd = parse("volume 70 mode shuffle")
         result = executor.execute(cmd)
 
         mock_player.set_volume.assert_called_once_with(0.7)
@@ -627,3 +634,270 @@ class TestErrorWrapping:
 
         with pytest.raises(DSLError, match="connection lost"):
             executor.execute({"action": "pause"})
+
+
+# ── Device Resolution (Fix 1) ───────────────────────────────────
+
+
+def _make_mock_devices(*name_id_pairs):
+    """Helper: build a mock Devices with named Device objects."""
+    devices = {}
+    for i, (name, device_id) in enumerate(name_id_pairs):
+        d = MagicMock()
+        d.name = name
+        d.device_id = device_id
+        devices[str(i)] = d
+    mock = MagicMock()
+    mock.devices = devices
+    return mock
+
+
+class TestDeviceResolution:
+    @patch("spotapi.dsl.executor.Player")
+    def test_resolve_by_name(self, MockPlayer, executor):
+        mock_player = MagicMock()
+        mock_player.device_id = "origin"
+        mock_player.device_ids = _make_mock_devices(
+            ("Living Room", "lr_hex"), ("Bedroom", "br_hex"),
+        )
+        MockPlayer.return_value = mock_player
+
+        executor.execute({"action": "set", "device": "Bedroom"})
+
+        mock_player.transfer_player.assert_called_once_with("origin", "br_hex")
+
+    @patch("spotapi.dsl.executor.Player")
+    def test_case_insensitive(self, MockPlayer, executor):
+        mock_player = MagicMock()
+        mock_player.device_id = "origin"
+        mock_player.device_ids = _make_mock_devices(("Kitchen Speaker", "ks_hex"))
+        MockPlayer.return_value = mock_player
+
+        executor.execute({"action": "set", "device": "kitchen speaker"})
+
+        mock_player.transfer_player.assert_called_once_with("origin", "ks_hex")
+
+    @patch("spotapi.dsl.executor.Player")
+    def test_unknown_device_error(self, MockPlayer, executor):
+        mock_player = MagicMock()
+        mock_player.device_ids = _make_mock_devices(("Kitchen", "k_hex"))
+        MockPlayer.return_value = mock_player
+
+        with pytest.raises(DSLError, match="Device 'Garage' not found"):
+            executor.execute({"action": "set", "device": "Garage"})
+
+
+# ── Volume Validation (Fix 2) ───────────────────────────────────
+
+
+class TestVolumeValidation:
+    @patch("spotapi.dsl.executor.Player")
+    def test_volume_in_range(self, MockPlayer, executor):
+        mock_player = MagicMock()
+        MockPlayer.return_value = mock_player
+
+        executor.execute({"action": "pause", "volume": 70})
+
+        mock_player.set_volume.assert_called_once_with(0.7)
+
+    @patch("spotapi.dsl.executor.Player")
+    def test_volume_zero(self, MockPlayer, executor):
+        mock_player = MagicMock()
+        MockPlayer.return_value = mock_player
+
+        executor.execute({"action": "pause", "volume": 0})
+
+        mock_player.set_volume.assert_called_once_with(0)
+
+    @patch("spotapi.dsl.executor.Player")
+    def test_volume_100(self, MockPlayer, executor):
+        mock_player = MagicMock()
+        MockPlayer.return_value = mock_player
+
+        executor.execute({"action": "pause", "volume": 100})
+
+        mock_player.set_volume.assert_called_once_with(1.0)
+
+    @patch("spotapi.dsl.executor.Player")
+    def test_volume_over_100_raises(self, MockPlayer, executor):
+        MockPlayer.return_value = MagicMock()
+
+        with pytest.raises(DSLError, match="Volume must be 0-100"):
+            executor.execute({"action": "pause", "volume": 150})
+
+    @patch("spotapi.dsl.executor.Player")
+    def test_volume_negative_raises(self, MockPlayer, executor):
+        MockPlayer.return_value = MagicMock()
+
+        with pytest.raises(DSLError, match="Volume must be 0-100"):
+            executor.execute({"action": "pause", "volume": -5})
+
+
+# ── Play String with Context (Fix 3) ────────────────────────────
+
+
+class TestPlayStringWithContext:
+    @patch("spotapi.dsl.executor.Player")
+    @patch("spotapi.dsl.executor.Song")
+    @patch("spotapi.dsl.executor.PrivatePlaylist")
+    def test_string_target_with_uri_context(self, MockPP, MockSong, MockPlayer, executor):
+        mock_song = MagicMock()
+        mock_song.query_songs.return_value = {
+            "data": {"searchV2": {"tracksV2": {"items": [
+                {"item": {"data": {"uri": "spotify:track:found"}}}
+            ]}}}
+        }
+        MockSong.return_value = mock_song
+        mock_player = MagicMock()
+        MockPlayer.return_value = mock_player
+
+        result = executor.execute({
+            "action": "play",
+            "target": "jazz",
+            "context": "spotify:playlist:abc",
+        })
+
+        mock_song.query_songs.assert_called_once_with("jazz", limit=1)
+        mock_player.play_track.assert_called_once_with(
+            "spotify:track:found", "spotify:playlist:abc"
+        )
+        assert result["resolved_uri"] == "spotify:track:found"
+        assert result["context"] == "spotify:playlist:abc"
+
+    @patch("spotapi.dsl.executor.Player")
+    @patch("spotapi.dsl.executor.Song")
+    @patch("spotapi.dsl.executor.PrivatePlaylist")
+    def test_string_target_with_string_context_raises(self, MockPP, MockSong, MockPlayer, executor):
+        mock_song = MagicMock()
+        mock_song.query_songs.return_value = {
+            "data": {"searchV2": {"tracksV2": {"items": [
+                {"item": {"data": {"uri": "spotify:track:found"}}}
+            ]}}}
+        }
+        MockSong.return_value = mock_song
+        MockPlayer.return_value = MagicMock()
+
+        with pytest.raises(DSLError, match="requires a playlist URI"):
+            executor.execute({
+                "action": "play",
+                "target": "jazz",
+                "context": "Classic Rock",
+            })
+
+
+# ── Recommend Validation (Fix 7) ────────────────────────────────
+
+
+class TestRecommendValidation:
+    def test_recommend_non_uri_raises(self, executor):
+        with pytest.raises(DSLError, match="recommend requires a playlist URI"):
+            executor.execute({"query": "recommend", "target": "Road Trip", "n": 5})
+
+    def test_recommend_non_playlist_uri_raises(self, executor):
+        with pytest.raises(DSLError, match="recommend requires a playlist URI"):
+            executor.execute({
+                "query": "recommend",
+                "target": "spotify:track:abc",
+                "n": 5,
+            })
+
+    @patch("spotapi.dsl.executor.PrivatePlaylist")
+    def test_recommend_playlist_uri_ok(self, MockPP, executor):
+        mock_pp = MagicMock()
+        mock_pp.recommended_songs.return_value = {"tracks": []}
+        MockPP.return_value = mock_pp
+
+        result = executor.execute({
+            "query": "recommend",
+            "target": "spotify:playlist:abc",
+            "n": 5,
+        })
+
+        assert result["status"] == "ok"
+
+
+# ── Parse Errors (Fix 8) ────────────────────────────────────────
+
+
+class TestParseErrors:
+    def test_invalid_command_string(self):
+        from spotapi.dsl import SpotifySession
+
+        login = MagicMock()
+        with patch("spotapi.dsl.executor.Player"):
+            session = SpotifySession(login, eager=False)
+
+        with pytest.raises(DSLError, match="Invalid command"):
+            session.run("explode everything")
+
+    def test_parse_error_lists_valid_commands(self):
+        from spotapi.dsl import SpotifySession
+
+        login = MagicMock()
+        with patch("spotapi.dsl.executor.Player"):
+            session = SpotifySession(login, eager=False)
+
+        with pytest.raises(DSLError, match="Valid commands:"):
+            session.run("gibberish xyz 123")
+
+    def test_empty_command(self):
+        from spotapi.dsl import SpotifySession
+
+        login = MagicMock()
+        with patch("spotapi.dsl.executor.Player"):
+            session = SpotifySession(login, eager=False)
+
+        with pytest.raises(DSLError):
+            session.run("")
+
+
+# ── Session Auth (Cookie Persistence) ───────────────────────────
+
+
+class TestSessionAuth:
+    def test_setup_creates_file(self, tmp_path):
+        from spotapi.dsl import SpotifySession
+
+        dest = tmp_path / "session.json"
+        result_path = SpotifySession.setup("FAKE_SP_DC_VALUE", path=dest)
+
+        assert result_path == dest
+        assert dest.exists()
+
+        import json
+        data = json.loads(dest.read_text())
+        assert data["cookies"]["sp_dc"] == "FAKE_SP_DC_VALUE"
+        assert data["identifier"] == "default"
+
+    def test_setup_empty_sp_dc_raises(self):
+        from spotapi.dsl import SpotifySession
+
+        with pytest.raises(DSLError, match="sp_dc cookie value is required"):
+            SpotifySession.setup("")
+
+    @patch("spotapi.dsl.Login.from_cookies")
+    def test_from_config_loads_session(self, mock_from_cookies, tmp_path):
+        from spotapi.dsl import SpotifySession
+
+        mock_login = MagicMock()
+        mock_from_cookies.return_value = mock_login
+
+        # Setup first
+        dest = tmp_path / "session.json"
+        SpotifySession.setup("FAKE_SP_DC", path=dest)
+
+        # Load from config
+        with patch("spotapi.dsl.executor.Player"):
+            session = SpotifySession.from_config(path=dest, eager=False)
+
+        # Verify from_cookies was called with correct dump
+        call_args = mock_from_cookies.call_args
+        dump = call_args[0][0]
+        assert dump["cookies"]["sp_dc"] == "FAKE_SP_DC"
+        assert dump["password"] == ""
+
+    def test_from_config_missing_file(self, tmp_path):
+        from spotapi.dsl import SpotifySession
+
+        with pytest.raises(DSLError, match="No session file found"):
+            SpotifySession.from_config(path=tmp_path / "nonexistent.json")

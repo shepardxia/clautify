@@ -58,11 +58,13 @@ class SpotifyExecutor:
     Lazily initializes heavy resources (Player requires WebSocket + threads).
     """
 
-    def __init__(self, login: Login):
+    def __init__(self, login: Login, eager: bool = True):
         self._login = login
         self._player: Optional[Player] = None
         self._song: Optional[Song] = None
         self._artist: Optional[Artist] = None
+        if eager:
+            _ = self.player
 
     # --- lazy properties ---
 
@@ -96,6 +98,16 @@ class SpotifyExecutor:
     def _playlist_for(self, target: str) -> PrivatePlaylist:
         """Fresh PrivatePlaylist per call (instance methods use self.playlist_id)."""
         return PrivatePlaylist(self._login, _extract_id(target, "playlist"))
+
+    def _resolve_device_id(self, name: str) -> str:
+        """Resolve a friendly device name to a device ID (case-insensitive)."""
+        devices = self.player.device_ids
+        name_lower = name.lower()
+        for device in devices.devices.values():
+            if device.name.lower() == name_lower:
+                return device.device_id
+        available = [d.name for d in devices.devices.values()]
+        raise DSLError(f"Device '{name}' not found. Available: {available}")
 
     def _resolve_track_uri(self, name: str, cmd: Dict[str, Any]) -> str:
         """Search for a track by name, return the top result's URI."""
@@ -166,13 +178,18 @@ class SpotifyExecutor:
 
     def _apply_state_modifiers(self, cmd: Dict[str, Any]) -> None:
         if "volume" in cmd:
-            self.player.set_volume(cmd["volume"])
+            vol = cmd["volume"]
+            if not (0 <= vol <= 100):
+                raise DSLError(f"Volume must be 0-100, got {vol}")
+            # Normalize to 0-1.0 for Player API
+            self.player.set_volume(vol if vol <= 1 else vol / 100)
         if "mode" in cmd:
             mode = cmd["mode"]
             self.player.set_shuffle(mode == "shuffle")
             self.player.repeat_track(mode == "repeat")
         if "device" in cmd:
-            self.player.transfer_player(self.player.device_id, cmd["device"])
+            device_id = self._resolve_device_id(cmd["device"])
+            self.player.transfer_player(self.player.device_id, device_id)
 
     # --- complex action handlers ---
 
@@ -180,20 +197,31 @@ class SpotifyExecutor:
         target = cmd["target"]
         context = cmd.get("context")
 
-        if _is_uri(target) and context:
-            self.player.play_track(target, context)
-            return {"status": "ok", "action": "play", "target": target, "context": context}
-
+        # Resolve target if it's a quoted string
         if _is_uri(target):
-            self.player.add_to_queue(target)
-            self.player.skip_next()
-            return {"status": "ok", "action": "play", "target": target}
+            track_uri = target
+        else:
+            track_uri = self._resolve_track_uri(target, cmd)
 
-        # Quoted string — search and play top result
-        track_uri = self._resolve_track_uri(target, cmd)
-        self.player.add_to_queue(track_uri)
-        self.player.skip_next()
-        return {"status": "ok", "action": "play", "target": target, "resolved_uri": track_uri}
+        # With context — use play_track (requires URI context)
+        if context:
+            if not _is_uri(context):
+                raise DSLError(
+                    'play with "in" context requires a playlist URI, '
+                    'e.g. play "song" in spotify:playlist:abc',
+                    command=cmd,
+                )
+            self.player.play_track(track_uri, context)
+            result = {"status": "ok", "action": "play", "target": target, "context": context}
+        else:
+            # No context — queue + skip
+            self.player.add_to_queue(track_uri)
+            self.player.skip_next()
+            result = {"status": "ok", "action": "play", "target": target}
+
+        if track_uri != target:
+            result["resolved_uri"] = track_uri
+        return result
 
     def _action_skip(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
         n = cmd.get("n", 1)
@@ -207,11 +235,11 @@ class SpotifyExecutor:
         self.player.seek_to(position_ms)
         return {"status": "ok", "action": "seek", "position_ms": position_ms}
 
-    def _action_enqueue(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
+    def _action_queue(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
         target = cmd["target"]
         uri = target if _is_uri(target) else self._resolve_track_uri(target, cmd)
         self.player.add_to_queue(uri)
-        return {"status": "ok", "action": "enqueue", "target": uri}
+        return {"status": "ok", "action": "queue", "target": uri}
 
     def _action_playlist_add(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
         track, playlist = cmd["track"], cmd["playlist"]
@@ -272,7 +300,11 @@ class SpotifyExecutor:
     def _query_info(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
         target = cmd["target"]
         if not _is_uri(target):
-            raise DSLError("info requires a Spotify URI", command=cmd)
+            raise DSLError(
+                "info requires a Spotify URI (e.g. spotify:track:abc). "
+                "Use search to find URIs first.",
+                command=cmd,
+            )
 
         kind = _uri_kind(target)
         bare_id = _extract_id(target, kind)
@@ -298,5 +330,10 @@ class SpotifyExecutor:
 
     def _query_recommend(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
         target, n = cmd["target"], cmd.get("n", 20)
+        if not _is_uri(target) or _uri_kind(target) != "playlist":
+            raise DSLError(
+                f"recommend requires a playlist URI (e.g. spotify:playlist:abc), got '{target}'",
+                command=cmd,
+            )
         data = self._playlist_for(target).recommended_songs(num_songs=n)
         return {"status": "ok", "query": "recommend", "target": target, "n": n, "data": data}
