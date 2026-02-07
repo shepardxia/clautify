@@ -100,6 +100,19 @@ class SpotifySession:
         login = Login.from_cookies(dump, cfg)
         return cls(login, eager=eager)
 
+    def health_check(self) -> Dict[str, Any]:
+        """Verify Spotify session is valid by fetching an access token.
+
+        Lightweight — single HTTP GET to the token endpoint, no Player/WebSocket init.
+        Returns {"status": "ok", "authenticated": True} on success,
+        or {"status": "error", "authenticated": False, "error": "..."} on failure.
+        """
+        try:
+            self._executor._login.client._get_auth_vars()
+            return {"status": "ok", "authenticated": True}
+        except Exception as e:
+            return {"status": "error", "authenticated": False, "error": str(e)}
+
     def run(self, command: str) -> Dict[str, Any]:
         """Parse and execute a DSL command string.
 
