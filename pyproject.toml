@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "clautify"
+version = "1.2.7"
+description = "DSL-driven Spotify control via private API"
+license = "GPL-3.0-only"
+requires-python = ">=3.10"
+dependencies = [
+    "requests",
+    "colorama",
+    "readerwriterlock",
+    "tls_client",
+    "typing_extensions",
+    "pyotp",
+    "beautifulsoup4",
+    "lark",
+    "websockets",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["clautify"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = [
+    "F403",  # star imports (used in __init__.py re-exports)
+    "F401",  # unused imports (re-exports via star imports)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"clautify/types/*" = ["E722"]
+"clautify/client.py" = ["E501", "F601"]
+"clautify/websocket.py" = ["E501"]
+"clautify/utils/logger.py" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

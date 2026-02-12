@@ -1,7 +1,3 @@
-# Legal Notice
-
-> **Disclaimer**: This repository and any associated code are provided "as is" without warranty of any kind, either expressed or implied. The author of this repository does not accept any responsibility for the use or misuse of this repository or its contents. The author does not endorse any actions or consequences arising from the use of this repository. Any copies, forks, or re-uploads made by other users are not the responsibility of the author. The repository is solely intended as a Proof Of Concept for educational purposes regarding the use of a service's private API. By using this repository, you acknowledge that the author makes no claims about the accuracy, legality, or safety of the code and accepts no liability for any issues that may arise. More information can be found [HERE](./LEGAL_NOTICE.md).
-
 # clautify
 
 A DSL-driven Spotify controller. One command string does what used to take five API calls.
@@ -99,14 +95,6 @@ volume 50 mode repeat
 - State modifiers (`volume`, `mode`, `device`/`on`) only compose with actions
 - Query modifiers (`limit`, `offset`) only compose with queries
 - Mixing them is a parse error
-
-## Low-Level API
-
-The underlying API classes are available for direct use:
-
-- [Artist](./docs/artist.md) · [Album](./docs/album.md) · [Song](./docs/song.md) · [Playlist](./docs/playlist.md)
-- [Player](./docs/player.md) · [Login](./docs/login.md) · [Status](./docs/status.md) · [User](./docs/user.md)
-- [DSL Grammar](./docs/language.md) · [WebSocket](./docs/websocket.md)
 
 ## Credits
 
