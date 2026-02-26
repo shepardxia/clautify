@@ -9,6 +9,7 @@ from clautify.song import Song
 from clautify.status import PlayerStatus
 from clautify.types.annotations import enforce
 from clautify.utils import random_hex_string
+from clautify.utils.strings import extract_spotify_id
 
 __all__ = ["Player", "PlayerStatus", "PlayerError"]
 
@@ -148,8 +149,7 @@ class Player(PlayerStatus):
         self._run_command(from_device_id, to_device_id, payload)
 
     def _add_to_queue(self, from_device_id: str, to_device_id: str, track: str) -> None:
-        if track.startswith("spotify:track:"):
-            track = track.split(":")[-1]
+        track = extract_spotify_id(track, "track")
 
         payload = {
             "command": {
@@ -172,11 +172,8 @@ class Player(PlayerStatus):
         playlist: str,
         track_uid: str,
     ) -> None:
-        if track.startswith("spotify:track:"):
-            track = track.split(":")[-1]
-
-        if playlist.startswith("spotify:playlist:"):
-            playlist = playlist.split(":")[-1]
+        track = extract_spotify_id(track, "track")
+        playlist = extract_spotify_id(playlist, "playlist")
 
         payload = {
             "command": {
@@ -263,9 +260,7 @@ class Player(PlayerStatus):
         playlist : str
             The playlist uri to play the track from.
         """
-        if track.startswith("spotify:track:"):
-            track = track.split(":")[-1]
-
+        track = extract_spotify_id(track, "track")
         _playlist = PublicPlaylist(playlist).paginate_playlist()
 
         uids: List[str] = []

@@ -1,4 +1,3 @@
-import json
 from collections.abc import Generator, Iterable, Mapping
 from typing import Any, List, Tuple
 
@@ -7,6 +6,8 @@ from clautify.exceptions import SongError
 from clautify.http.request import TLSClient
 from clautify.playlist import PrivatePlaylist, PublicPlaylist
 from clautify.types.annotations import enforce
+from clautify.utils.pagination import paginate
+from clautify.utils.strings import extract_spotify_id
 
 __all__ = ["Song", "SongError"]
 
@@ -43,23 +44,7 @@ class Song:
         Gets information about a specific song.
         """
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        params = {
-            "operationName": "getTrack",
-            "variables": json.dumps(
-                {
-                    "uri": f"spotify:track:{track_id}",
-                }
-            ),
-            "extensions": json.dumps(
-                {
-                    "persistedQuery": {
-                        "version": 1,
-                        "sha256Hash": self.base.part_hash("getTrack"),
-                    }
-                }
-            ),
-        }
-
+        params = self.base.graphql_params("getTrack", {"uri": f"spotify:track:{track_id}"})
         resp = self.base.client.post(url, params=params, authenticate=True)
 
         if resp.fail:
@@ -76,30 +61,19 @@ class Song:
         NOTE: Returns the raw result unlike paginate_songs which only returns the songs.
         """
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        params = {
-            "operationName": "searchDesktop",
-            "variables": json.dumps(
-                {
-                    "searchTerm": query,
-                    "offset": offset,
-                    "limit": limit,
-                    "numberOfTopResults": 5,
-                    "includeAudiobooks": True,
-                    "includeArtistHasConcertsField": False,
-                    "includePreReleases": True,
-                    "includeLocalConcertsField": False,
-                }
-            ),
-            "extensions": json.dumps(
-                {
-                    "persistedQuery": {
-                        "version": 1,
-                        "sha256Hash": self.base.part_hash("searchDesktop"),
-                    }
-                }
-            ),
-        }
-
+        params = self.base.graphql_params(
+            "searchDesktop",
+            {
+                "searchTerm": query,
+                "offset": offset,
+                "limit": limit,
+                "numberOfTopResults": 5,
+                "includeAudiobooks": True,
+                "includeArtistHasConcertsField": False,
+                "includePreReleases": True,
+                "includeLocalConcertsField": False,
+            },
+        )
         resp = self.base.client.post(url, params=params, authenticate=True)
 
         if resp.fail:
@@ -111,25 +85,13 @@ class Song:
         return resp.response
 
     def paginate_songs(self, query: str, /) -> Generator[Mapping[str, Any], None, None]:
-        """
-        Generator that fetches songs in chunks
-
-        Note: If total_count <= 100, then there is no need to paginate
-        """
-        UPPER_LIMIT: int = 100
-        # We need to get the total songs first
-        songs = self.query_songs(query, limit=UPPER_LIMIT)
-        total_count: int = songs["data"]["searchV2"]["tracksV2"]["totalCount"]
-
-        yield songs["data"]["searchV2"]["tracksV2"]["items"]
-
-        if total_count <= UPPER_LIMIT:
-            return
-
-        offset = UPPER_LIMIT
-        while offset < total_count:
-            yield self.query_songs(query, limit=UPPER_LIMIT, offset=offset)["data"]["searchV2"]["tracksV2"]["items"]
-            offset += UPPER_LIMIT
+        """Generator that fetches songs in chunks."""
+        return paginate(
+            lambda limit, offset: self.query_songs(query, limit=limit, offset=offset),
+            "data.searchV2.tracksV2.totalCount",
+            "data.searchV2.tracksV2.items",
+            upper_limit=100,
+        )
 
     def add_songs_to_playlist(self, song_ids: List[str], /) -> None:
         """Adds multiple songs to the playlist"""
@@ -138,20 +100,14 @@ class Song:
             raise ValueError("Playlist not set")
 
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        payload = {
-            "variables": {
+        payload = self.base.graphql_payload(
+            "addToPlaylist",
+            {
                 "uris": [f"spotify:track:{song_id}" for song_id in song_ids],
                 "playlistUri": f"spotify:playlist:{self.playlist.playlist_id}",
                 "newPosition": {"moveType": "BOTTOM_OF_PLAYLIST", "fromUid": None},
             },
-            "operationName": "addToPlaylist",
-            "extensions": {
-                "persistedQuery": {
-                    "version": 1,
-                    "sha256Hash": self.base.part_hash("addToPlaylist"),
-                }
-            },
-        }
+        )
         resp = self.base.client.post(url, json=payload, authenticate=True)
 
         if resp.fail:
@@ -159,32 +115,20 @@ class Song:
 
     def add_song_to_playlist(self, song_id: str, /) -> None:
         """Adds a song to the playlist"""
-        if "track:" in song_id:
-            song_id = song_id.split("track:")[-1]
-        elif "track/" in song_id:
-            song_id = song_id.split("track/")[-1]
-
-        self.add_songs_to_playlist([song_id])
+        self.add_songs_to_playlist([extract_spotify_id(song_id, "track")])
 
     def _stage_remove_song(self, uids: List[str]) -> None:
         # If None, something internal went wrong
         assert self.playlist is not None, "Playlist not set"
 
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        payload = {
-            "variables": {
+        payload = self.base.graphql_payload(
+            "removeFromPlaylist",
+            {
                 "playlistUri": f"spotify:playlist:{self.playlist.playlist_id}",
                 "uids": uids,
             },
-            "operationName": "removeFromPlaylist",
-            "extensions": {
-                "persistedQuery": {
-                    "version": 1,
-                    "sha256Hash": self.base.part_hash("removeFromPlaylist"),
-                }
-            },
-        }
-
+        )
         resp = self.base.client.post(url, json=payload, authenticate=True)
 
         if resp.fail:
@@ -224,10 +168,7 @@ class Song:
         If all_instances is True, only song_name can be used.
         """
         if song_id:
-            if "track:" in song_id:
-                song_id = song_id.split("track:")[-1]
-            elif "track/" in song_id:
-                song_id = song_id.split("track/")[-1]
+            song_id = extract_spotify_id(song_id, "track")
 
         if not (song_id or song_name or uid):
             raise ValueError("Must provide either song_id or song_name or uid")
@@ -267,24 +208,15 @@ class Song:
         if not self.playlist or not hasattr(self.playlist, "playlist_id"):
             raise ValueError("Playlist not set")
 
-        if song_id:
-            if "track:" in song_id:
-                song_id = song_id.split("track:")[-1]
-            elif "track/" in song_id:
-                song_id = song_id.split("track/")[-1]
+        song_id = extract_spotify_id(song_id, "track")
 
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        payload = {
-            "variables": {"libraryItemUris": [f"spotify:track:{song_id}"]},
-            "operationName": "addToLibrary",
-            "extensions": {
-                "persistedQuery": {
-                    "version": 1,
-                    "sha256Hash": self.base.part_hash("addToLibrary"),
-                }
+        payload = self.base.graphql_payload(
+            "addToLibrary",
+            {
+                "libraryItemUris": [f"spotify:track:{song_id}"],
             },
-        }
-
+        )
         resp = self.base.client.post(url, json=payload, authenticate=True)
 
         if resp.fail:
@@ -294,24 +226,15 @@ class Song:
         if not self.playlist or not hasattr(self.playlist, "playlist_id"):
             raise ValueError("Playlist not set")
 
-        if song_id:
-            if "track:" in song_id:
-                song_id = song_id.split("track:")[-1]
-            elif "track/" in song_id:
-                song_id = song_id.split("track/")[-1]
+        song_id = extract_spotify_id(song_id, "track")
 
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        payload = {
-            "variables": {"libraryItemUris": [f"spotify:track:{song_id}"]},
-            "operationName": "removeFromLibrary",
-            "extensions": {
-                "persistedQuery": {
-                    "version": 1,
-                    "sha256Hash": self.base.part_hash("removeFromLibrary"),
-                }
+        payload = self.base.graphql_payload(
+            "removeFromLibrary",
+            {
+                "libraryItemUris": [f"spotify:track:{song_id}"],
             },
-        }
-
+        )
         resp = self.base.client.post(url, json=payload, authenticate=True)
 
         if resp.fail:

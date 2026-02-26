@@ -8,20 +8,9 @@ from clautify.types.interfaces import CaptchaProtocol, LoggerProtocol
 
 __all__ = [
     "Config",
-    "SolverConfig",
     "Metadata",
     "Track",
-    "Index",
-    "PlayOrigin",
-    "Restrictions",
-    "Options",
-    "PlaybackQuality",
-    "ContextMetadata",
     "PlayerState",
-    "Hifi",
-    "AudioOutputDeviceInfo",
-    "Capabilities",
-    "MetadataMap",
     "Device",
     "Devices",
 ]
@@ -35,16 +24,6 @@ class Config:
 
     def __str__(self) -> str:
         return "Config()"
-
-
-@dataclass
-class SolverConfig:
-    api_key: str
-    captcha_service: str
-    retries: int = field(default=120)
-
-    def __str__(self) -> str:
-        return "SolverConfig()"
 
 
 @dataclass

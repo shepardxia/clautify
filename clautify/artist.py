@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Generator, Mapping
 from typing import Any, Literal
 
@@ -9,6 +8,8 @@ from clautify.exceptions import ArtistError
 from clautify.http.request import TLSClient
 from clautify.login import Login
 from clautify.types.annotations import enforce
+from clautify.utils.pagination import paginate
+from clautify.utils.strings import extract_spotify_id
 
 __all__ = ["Artist", "ArtistError"]
 
@@ -49,28 +50,17 @@ class Artist:
     def query_artists(self, query: str, /, limit: int = 10, *, offset: int = 0) -> Mapping[str, Any]:
         """Searches for an artist in the Spotify catalog"""
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        params = {
-            "operationName": "searchArtists",
-            "variables": json.dumps(
-                {
-                    "searchTerm": query,
-                    "offset": offset,
-                    "limit": limit,
-                    "numberOfTopResults": 5,
-                    "includeAudiobooks": True,
-                    "includePreReleases": False,
-                }
-            ),
-            "extensions": json.dumps(
-                {
-                    "persistedQuery": {
-                        "version": 1,
-                        "sha256Hash": self.base.part_hash("searchArtists"),
-                    }
-                }
-            ),
-        }
-
+        params = self.base.graphql_params(
+            "searchArtists",
+            {
+                "searchTerm": query,
+                "offset": offset,
+                "limit": limit,
+                "numberOfTopResults": 5,
+                "includeAudiobooks": True,
+                "includePreReleases": False,
+            },
+        )
         resp = self.base.client.post(url, params=params, authenticate=True)
 
         if resp.fail:
@@ -83,28 +73,16 @@ class Artist:
 
     def get_artist(self, artist_id: str, /, *, locale_code: str = "en") -> Mapping[str, Any]:
         """Gets an artist by ID"""
-        if "artist:" in artist_id:
-            artist_id = artist_id.split("artist:")[-1]
+        artist_id = extract_spotify_id(artist_id, "artist")
 
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        params = {
-            "operationName": "queryArtistOverview",
-            "variables": json.dumps(
-                {
-                    "uri": f"spotify:artist:{artist_id}",
-                    "locale": locale_code,
-                }
-            ),
-            "extensions": json.dumps(
-                {
-                    "persistedQuery": {
-                        "version": 1,
-                        "sha256Hash": self.base.part_hash("queryArtistOverview"),
-                    }
-                }
-            ),
-        }
-
+        params = self.base.graphql_params(
+            "queryArtistOverview",
+            {
+                "uri": f"spotify:artist:{artist_id}",
+                "locale": locale_code,
+            },
+        )
         resp = self.base.client.get(url, params=params, authenticate=True)
 
         if resp.fail:
@@ -116,26 +94,13 @@ class Artist:
         return resp.response
 
     def paginate_artists(self, query: str, /) -> Generator[Mapping[str, Any], None, None]:
-        """
-        Generator that fetches artists in chunks
-
-        Note: If total_count <= 100, then there is no need to paginate
-        """
-        UPPER_LIMIT: int = 100
-
-        # We need to get the total artists first
-        artists = self.query_artists(query, limit=UPPER_LIMIT)
-        total_count: int = artists["data"]["searchV2"]["artists"]["totalCount"]
-
-        yield artists["data"]["searchV2"]["artists"]["items"]
-
-        if total_count <= UPPER_LIMIT:
-            return
-
-        offset = UPPER_LIMIT
-        while offset < total_count:
-            yield self.query_artists(query, limit=UPPER_LIMIT, offset=offset)["data"]["searchV2"]["artists"]["items"]
-            offset += UPPER_LIMIT
+        """Generator that fetches artists in chunks."""
+        return paginate(
+            lambda limit, offset: self.query_artists(query, limit=limit, offset=offset),
+            "data.searchV2.artists.totalCount",
+            "data.searchV2.artists.items",
+            upper_limit=100,
+        )
 
     def _do_follow(
         self,
@@ -147,25 +112,15 @@ class Artist:
         if not self._login:
             raise ValueError("Must be logged in")
 
-        if "artist:" in artist_id:
-            artist_id = artist_id.split("artist:")[1]
+        artist_id = extract_spotify_id(artist_id, "artist")
 
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        payload = {
-            "variables": {
-                "uris": [
-                    f"spotify:artist:{artist_id}",
-                ],
+        payload = self.base.graphql_payload(
+            action,
+            {
+                "uris": [f"spotify:artist:{artist_id}"],
             },
-            "operationName": action,
-            "extensions": {
-                "persistedQuery": {
-                    "version": 1,
-                    "sha256Hash": self.base.part_hash(str(action)),
-                },
-            },
-        }
-
+        )
         resp = self.base.client.post(url, json=payload, authenticate=True)
 
         if resp.fail:

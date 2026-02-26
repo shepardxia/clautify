@@ -1,6 +1,5 @@
 import functools
-import threading
-from typing import Any, Callable, Dict, List, ParamSpec, TypeVar
+from typing import Any, Dict, List
 
 from clautify.login import Login
 from clautify.types.annotations import enforce
@@ -9,15 +8,10 @@ from clautify.websocket import WebsocketStreamer
 
 __all__ = [
     "PlayerStatus",
-    "WebsocketStreamer",
-    "EventManager",
     "PlayerState",
     "Devices",
     "Track",
 ]
-
-R = TypeVar("R")
-P = ParamSpec("P")
 
 
 @enforce
@@ -142,84 +136,3 @@ class PlayerStatus(WebsocketStreamer):
         """Gets the last played songs."""
         state = self.state
         return state.prev_tracks
-
-
-@enforce
-class EventManager(PlayerStatus):
-    """
-    An event manager for the Spotify state updates.
-
-    Parameters
-    ----------
-    login : Login
-        The login instance used for authentication.
-    s_device_id : Optional[str], optional
-        The device ID to use for the player. If None, a new device ID will be generated.
-    """
-
-    __slots__ = (
-        "_current_state",
-        "wlock",
-        "_subscriptions",
-        "listener",
-    )
-
-    def __init__(self, login: Login, s_device_id: str | None = None) -> None:
-        super().__init__(login, s_device_id)
-        self._current_state = self.state  # Need this to activate websocket
-
-        self.wlock = threading.Lock()
-        self._subscriptions: Dict[str, List[Callable[..., Any]]] = {}
-
-        self.listener = threading.Thread(target=self._listen, daemon=True)
-        self.listener.start()
-
-    def _subscribe_callable(self, event: str, func: Callable[..., Any]) -> None:
-        with self.wlock:
-            if event not in self._subscriptions:
-                self._subscriptions[event] = []
-
-            if func not in self._subscriptions[event]:
-                self._subscriptions[event].append(func)
-            else:
-                raise ValueError(f"Function {func.__name__} is already subscribed to event '{event}'")
-
-    def subscribe(self, event: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
-        """
-        Decorator to subscribe a function to a Spotify websocket event.
-        """
-
-        def decorator(func: Callable[P, R]) -> Callable[P, R]:
-            @functools.wraps(func)
-            def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
-                result = func(*args, **kwargs)
-                return result
-
-            self._subscribe_callable(event, wrapped)
-            return wrapped
-
-        return decorator
-
-    def _emit(self, event: str, *args: Any, **kwargs: Any) -> None:
-        """
-        Emit an event, triggering all subscribed functions.
-        Should only be called from the WebsocketStreamer thread.
-        """
-        if event in self._subscriptions:
-            for func in self._subscriptions[event]:
-                func(*args, **kwargs)
-
-    def unsubscribe(self, event: str, func: Callable[..., Any]) -> None:
-        """Unsubscribe a function from an event."""
-        with self.wlock:
-            if event in self._subscriptions:
-                self._subscriptions[event].remove(func)
-
-    def _listen(self) -> None:
-        while True:
-            event = self.get_packet()
-            if event is None or event.get("payloads") is None:
-                continue
-
-            for payload in event["payloads"]:
-                self._emit(payload["update_reason"], payload)

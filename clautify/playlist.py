@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 import time
 from collections.abc import Generator, Mapping
@@ -12,6 +11,8 @@ from clautify.http.request import TLSClient
 from clautify.login import Login
 from clautify.types.annotations import enforce
 from clautify.user import User
+from clautify.utils.pagination import paginate
+from clautify.utils.strings import extract_spotify_id
 
 __all__ = ["PublicPlaylist", "PrivatePlaylist", "PlaylistError"]
 
@@ -43,7 +44,7 @@ class PublicPlaylist:
         language: str = "en",
     ) -> None:
         self.base = BaseClient(client=client, language=language)
-        self.playlist_id = playlist.split("playlist/")[-1] if "playlist" in playlist else playlist
+        self.playlist_id = extract_spotify_id(playlist, "playlist")
         self.playlist_link = f"https://open.spotify.com/playlist/{self.playlist_id}"
 
     def get_playlist_info(
@@ -55,26 +56,15 @@ class PublicPlaylist:
     ) -> Mapping[str, Any]:
         """Gets the public playlist information"""
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        params = {
-            "operationName": "fetchPlaylist",
-            "variables": json.dumps(
-                {
-                    "uri": f"spotify:playlist:{self.playlist_id}",
-                    "offset": offset,
-                    "limit": limit,
-                    "enableWatchFeedEntrypoint": enable_watch_feed_entrypoint,
-                }
-            ),
-            "extensions": json.dumps(
-                {
-                    "persistedQuery": {
-                        "version": 1,
-                        "sha256Hash": self.base.part_hash("fetchPlaylist"),
-                    }
-                }
-            ),
-        }
-
+        params = self.base.graphql_params(
+            "fetchPlaylist",
+            {
+                "uri": f"spotify:playlist:{self.playlist_id}",
+                "offset": offset,
+                "limit": limit,
+                "enableWatchFeedEntrypoint": enable_watch_feed_entrypoint,
+            },
+        )
         resp = self.base.client.post(url, params=params, authenticate=True)
 
         if resp.fail:
@@ -86,25 +76,13 @@ class PublicPlaylist:
         return resp.response
 
     def paginate_playlist(self) -> Generator[Mapping[str, Any], None, None]:
-        """
-        Generator that fetches playlist information in chunks
-
-        NOTE: If total_tracks <= 343, then there is no need to paginate.
-        """
-        UPPER_LIMIT: int = 343
-        # We need to get the total playlists first
-        playlist = self.get_playlist_info(limit=UPPER_LIMIT)
-        total_count: int = playlist["data"]["playlistV2"]["content"]["totalCount"]
-
-        yield playlist["data"]["playlistV2"]["content"]
-
-        if total_count <= UPPER_LIMIT:
-            return
-
-        offset = UPPER_LIMIT
-        while offset < total_count:
-            yield self.get_playlist_info(limit=UPPER_LIMIT, offset=offset)["data"]["playlistV2"]["content"]
-            offset += UPPER_LIMIT
+        """Generator that fetches playlist content in chunks."""
+        return paginate(
+            lambda limit, offset: self.get_playlist_info(limit=limit, offset=offset),
+            "data.playlistV2.content.totalCount",
+            "data.playlistV2.content",
+            upper_limit=343,
+        )
 
 
 class PrivatePlaylist:
@@ -136,7 +114,7 @@ class PrivatePlaylist:
             raise ValueError("Must be logged in")
 
         if playlist:
-            self.playlist_id = playlist.split("playlist/")[-1] if "playlist" in playlist else playlist
+            self.playlist_id = extract_spotify_id(playlist, "playlist")
 
         self.base = BaseClient(login.client, language=language)
         self.login = login
@@ -145,9 +123,7 @@ class PrivatePlaylist:
         self._playlist: bool = bool(playlist)
 
     def set_playlist(self, playlist: str) -> None:
-        if "playlist:" in playlist:
-            playlist = playlist.split("playlist:")[-1]
-
+        playlist = extract_spotify_id(playlist, "playlist")
         if not playlist:
             raise ValueError("Playlist not set")
 
@@ -245,32 +221,21 @@ class PrivatePlaylist:
             Filter tags to apply (e.g. ["Playlists"]). Defaults to no filters.
         """
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        params = {
-            "operationName": "libraryV3",
-            "variables": json.dumps(
-                {
-                    "filters": filters if filters is not None else [],
-                    "order": None,
-                    "textFilter": "",
-                    "features": ["LIKED_SONGS", "YOUR_EPISODES", "PRERELEASES"],
-                    "limit": limit,
-                    "offset": offset,
-                    "flatten": False,
-                    "expandedFolders": [],
-                    "folderUri": None,
-                    "includeFoldersWhenFlattening": True,
-                }
-            ),
-            "extensions": json.dumps(
-                {
-                    "persistedQuery": {
-                        "version": 1,
-                        "sha256Hash": self.base.part_hash("libraryV3"),
-                    }
-                }
-            ),
-        }
-
+        params = self.base.graphql_params(
+            "libraryV3",
+            {
+                "filters": filters if filters is not None else [],
+                "order": None,
+                "textFilter": "",
+                "features": ["LIKED_SONGS", "YOUR_EPISODES", "PRERELEASES"],
+                "limit": limit,
+                "offset": offset,
+                "flatten": False,
+                "expandedFolders": [],
+                "folderUri": None,
+                "includeFoldersWhenFlattening": True,
+            },
+        )
         resp = self.login.client.post(url, params=params, authenticate=True)
 
         if resp.fail:

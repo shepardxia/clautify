@@ -7,14 +7,13 @@ from typing import (
     Dict,
     Optional,
     ParamSpec,
-    Type,
     TypeVar,
     Union,
     get_args,
     get_origin,
 )
 
-__all__ = ["enforce_types", "EnforceMeta", "enforce"]
+__all__ = ["enforce_types", "enforce"]
 
 _EnforceType = TypeVar("_EnforceType", bound=type)
 R = TypeVar("R")
@@ -178,18 +177,3 @@ def enforce(cls: _EnforceType) -> _EnforceType:
             setattr(cls, attr_name, wrapped)
 
     return cls
-
-
-class EnforceMeta(type):
-    """
-    Left it here if I need it in future.
-
-    I have came to the conclusion that this is not needed due to its complexity with inheritance.
-    """
-
-    def __new__(cls: Type[type], name: str, bases: tuple[type, ...], dct: Dict[str, Any]) -> type:
-        for attr_name, attr_value in dct.items():
-            if callable(attr_value) and not attr_name.startswith("__"):
-                dct[attr_name] = enforce_types(attr_value)
-
-        return super().__new__(cls, name, bases, dct)  # type: ignore

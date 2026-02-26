@@ -1,71 +1,59 @@
-// Spotify DSL Grammar (v3)
+// Spotify DSL Grammar (v4)
 //
-// Three top-level forms:
-//   action state_modifier*    — play, pause, skip, like, etc. + volume/mode/device
-//   query query_modifier*     — search, info, library, etc. + limit/offset
-//   state_modifier+           — standalone state changes (volume 0.7, mode shuffle)
-//
-// State modifiers do NOT compose with queries. Query modifiers do NOT compose with actions.
+// Uniform verb-kind-target pattern.
+// Kind is always singular: track, album, artist, playlist.
+// Targets: quoted strings (auto-resolved via search) or bare 22-char IDs.
 
 start: action state_modifier*
      | query query_modifier*
      | state_modifier+
 
-// === Actions (mutate state) ===
+// === Actions ===
 
-?action: "play" play_kind target ("in" target)?  -> play
-       | "play" target ("in" target)?              -> play
-       | "pause"                           -> pause
-       | "resume"                          -> resume
-       | "skip" SIGNED_NUMBER?             -> skip
-       | "seek" NUMBER                     -> seek
-       | "queue" target                    -> queue
-       | "like" target                     -> like
-       | "unlike" target                   -> unlike
-       | "follow" target                   -> follow
-       | "unfollow" target                 -> unfollow
-       | "save" target                     -> save
-       | "unsave" target                   -> unsave
-       | "add" target "to" target          -> playlist_add
-       | "remove" target "from" target     -> playlist_remove
-       | "create" "playlist" ESCAPED_STRING -> playlist_create
-       | "delete" "playlist" target        -> playlist_delete
+?action: "play" kind target context?                    -> play
+       | "pause"                                        -> pause
+       | "resume"                                       -> resume
+       | "skip" SIGNED_NUMBER?                          -> skip
+       | "seek" NUMBER                                  -> seek
+       | "queue" kind target+                           -> queue
+       | "library" LIB_MUT kind target+ context?        -> library_mut
+       | "library" "create" "playlist" ESCAPED_STRING   -> library_create
+       | "library" "delete" "playlist" target           -> library_delete
 
-// === Queries (read state) ===
+// === Queries ===
 
-?query: "search" ESCAPED_STRING+ type?     -> search
-      | "now" "playing"                    -> now_playing
-      | "get" "queue"                      -> get_queue
-      | "get" "devices"                    -> get_devices
-      | "library" type?                    -> library
-      | "info" target                      -> info
-      | "history"                          -> history
-      | "recommend" NUMBER? "for" target   -> recommend
+?query: "search" kind ESCAPED_STRING+                   -> search
+      | "info" kind target                              -> info
+      | "recommend" kind NUMBER? context                -> recommend
+      | "status"                                        -> status
+      | "library" "list" kind                           -> library_list
 
-// === State Modifiers (actions only, or standalone) ===
+// === Context (reusable: "in" kind target) ===
 
-?state_modifier: "volume" VOL_DELTA         -> volume_rel
-               | "volume" NUMBER            -> volume
-               | "mode" MODE              -> mode
-               | "on" ESCAPED_STRING      -> device
-               | "device" ESCAPED_STRING  -> device
+context: "in" kind target
 
-// === Query Modifiers (queries only) ===
+// === State Modifiers (standalone or chained onto actions) ===
 
-?query_modifier: "limit" NUMBER            -> limit
-               | "offset" NUMBER           -> offset
+?state_modifier: "volume" VOL_DELTA                     -> volume_rel
+               | "volume" NUMBER                        -> volume
+               | "mode" MODE                            -> mode
+               | "device" ESCAPED_STRING                 -> device
+
+// === Query Modifiers ===
+
+?query_modifier: "limit" NUMBER                         -> limit
+               | "offset" NUMBER                        -> offset
 
 // === Shared ===
 
-?target: URI | ESCAPED_STRING
+?target: BARE_ID | ESCAPED_STRING
 
-type: TYPE_KW
-TYPE_KW: "tracks"i | "artists"i | "albums"i | "playlists"i
+kind: KIND_KW
+KIND_KW: "track"i | "album"i | "artist"i | "playlist"i
 
-play_kind: PLAY_KIND_KW
-PLAY_KIND_KW: "track"i | "album"i | "playlist"i
+LIB_MUT: "add"i | "remove"i
 MODE: "normal"i | "shuffle"i | "repeat"i
-URI: /spotify:[a-z]+:[a-zA-Z0-9]+/
+BARE_ID: /[a-zA-Z0-9]{22}/
 VOL_DELTA: /[+-]\d+/
 
 %import common.ESCAPED_STRING

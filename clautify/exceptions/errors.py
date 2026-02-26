@@ -1,7 +1,5 @@
 __all__ = [
     "ParentException",
-    "CaptchaException",
-    "SolverError",
     "LoginError",
     "UserError",
     "PlaylistError",
@@ -10,13 +8,9 @@ __all__ = [
     "ArtistError",
     "BaseClientError",
     "RequestError",
-    "GeneratorError",
-    "PasswordError",
-    "FamilyError",
     "WebSocketError",
     "PlayerError",
     "AlbumError",
-    "PodcastError",
 ]
 
 
@@ -24,16 +18,6 @@ class ParentException(Exception):
     def __init__(self, message: str, error: str | None = None) -> None:
         super().__init__(message)
         self.error = error
-
-
-# Runtime exceptions (API errors)
-class CaptchaException(ParentException):
-    pass
-
-
-# Final exceptions
-class SolverError(ParentException):
-    pass
 
 
 # Login.py exceptions
@@ -76,21 +60,6 @@ class RequestError(ParentException):
     pass
 
 
-# generator.py exceptions
-class GeneratorError(ParentException):
-    pass
-
-
-# password.py exceptions
-class PasswordError(ParentException):
-    pass
-
-
-# family.py exceptions
-class FamilyError(ParentException):
-    pass
-
-
 # websocket.py exceptions
 class WebSocketError(ParentException):
     pass
@@ -103,9 +72,4 @@ class PlayerError(ParentException):
 
 # album.py exceptions
 class AlbumError(ParentException):
-    pass
-
-
-# podcast.py exceptions
-class PodcastError(ParentException):
     pass

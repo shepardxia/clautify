@@ -21,7 +21,7 @@ class SpotifyTransformer(Transformer):
 
     # --- terminals ---
 
-    def URI(self, t: Token) -> str:
+    def BARE_ID(self, t: Token) -> str:
         return str(t)
 
     def ESCAPED_STRING(self, t: Token) -> str:
@@ -39,29 +39,21 @@ class SpotifyTransformer(Transformer):
     def MODE(self, t: Token) -> str:
         return str(t).lower()
 
-    def TYPE_KW(self, t: Token) -> str:
+    def KIND_KW(self, t: Token) -> str:
         return str(t).lower()
 
-    def PLAY_KIND_KW(self, token):
-        return str(token).lower()
+    def LIB_MUT(self, t: Token) -> str:
+        return str(t).lower()
 
-    def play_kind(self, items: list) -> str:
-        return items[0]
-
-    def type(self, items: list) -> str:
+    def kind(self, items: list) -> str:
         return items[0]
 
     # --- actions ---
 
     def play(self, items):
-        result = self._cmd("play")
-        for item in items:
-            if isinstance(item, str) and item in ("track", "album", "playlist"):
-                result["kind"] = item
-            elif "target" not in result:
-                result["target"] = item
-            else:
-                result["context"] = item
+        result = self._cmd("play", kind=items[0], target=items[1])
+        if len(items) > 2:
+            result.update(items[2])  # context dict
         return result
 
     def pause(self, items):
@@ -74,75 +66,55 @@ class SpotifyTransformer(Transformer):
         return self._cmd("skip", n=items[0] if items else 1)
 
     def seek(self, items):
-        return self._cmd("seek", position_ms=items[0])
+        return self._cmd("seek", position_s=items[0])
 
     def queue(self, items):
-        return self._cmd("queue", target=items[0])
+        return self._cmd("queue", kind=items[0], targets=list(items[1:]))
 
-    def like(self, items):
-        return self._cmd("like", target=items[0])
+    def library_mut(self, items):
+        lib_action = items[0]  # "add" or "remove"
+        kind = items[1]
+        targets = [x for x in items[2:] if isinstance(x, str)]
+        context = next((x for x in items[2:] if isinstance(x, dict)), None)
+        result = self._cmd(f"library_{lib_action}", kind=kind, targets=targets)
+        if context:
+            result.update(context)
+        return result
 
-    def unlike(self, items):
-        return self._cmd("unlike", target=items[0])
+    def library_create(self, items):
+        return self._cmd("library_create", kind="playlist", target=items[0])
 
-    def follow(self, items):
-        return self._cmd("follow", target=items[0])
-
-    def unfollow(self, items):
-        return self._cmd("unfollow", target=items[0])
-
-    def save(self, items):
-        return self._cmd("save", target=items[0])
-
-    def unsave(self, items):
-        return self._cmd("unsave", target=items[0])
-
-    def playlist_add(self, items):
-        return self._cmd("playlist_add", track=items[0], playlist=items[1])
-
-    def playlist_remove(self, items):
-        return self._cmd("playlist_remove", track=items[0], playlist=items[1])
-
-    def playlist_create(self, items):
-        return self._cmd("playlist_create", name=items[0])
-
-    def playlist_delete(self, items):
-        return self._cmd("playlist_delete", target=items[0])
+    def library_delete(self, items):
+        return self._cmd("library_delete", kind="playlist", target=items[0])
 
     # --- queries ---
 
     def search(self, items):
-        TYPE_KEYWORDS = {"tracks", "artists", "albums", "playlists"}
-        if items and items[-1] in TYPE_KEYWORDS:
-            type_ = items[-1]
-            terms = list(items[:-1])
-        else:
-            type_ = None
-            terms = list(items)
-        return self._query("search", terms=terms, type=type_)
-
-    def now_playing(self, items):
-        return self._query("now_playing")
-
-    def get_queue(self, items):
-        return self._query("get_queue")
-
-    def get_devices(self, items):
-        return self._query("get_devices")
-
-    def library(self, items):
-        return self._query("library", type=items[0] if items else None)
+        kind = items[0]
+        terms = list(items[1:])
+        return self._query("search", kind=kind, terms=terms)
 
     def info(self, items):
-        return self._query("info", target=items[0])
-
-    def history(self, items):
-        return self._query("history")
+        return self._query("info", kind=items[0], target=items[1])
 
     def recommend(self, items):
-        if len(items) == 2:
-            return self._query("recommend", n=int(items[0]), target=items[1])
-        return self._query("recommend", target=items[0])
+        kind = items[0]
+        if len(items) == 3:
+            result = self._query("recommend", kind=kind, n=int(items[1]))
+            result.update(items[2])  # context dict
+        else:
+            result = self._query("recommend", kind=kind)
+            result.update(items[1])  # context dict
+        return result
+
+    def status(self, items):
+        return self._query("status")
+
+    def context(self, items):
+        return {"context_kind": items[0], "context": items[1]}
+
+    def library_list(self, items):
+        return self._query("library_list", kind=items[0])
 
     # --- modifiers (all return (key, value) tuples) ---
 

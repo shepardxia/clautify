@@ -11,7 +11,7 @@ from clautify.types import Config, SaverProtocol
 from clautify.types.annotations import enforce
 from clautify.utils.strings import parse_json_string
 
-__all__ = ["Login", "LoginChallenge", "LoginError"]
+__all__ = ["Login", "LoginError"]
 
 
 @enforce

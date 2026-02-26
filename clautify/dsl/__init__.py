@@ -9,9 +9,9 @@ Usage:
     # Every subsequent use — auto-loads from ~/.config/clautify/session.json:
     session = SpotifySession.from_config()
 
-    result = session.run('play "Bohemian Rhapsody" volume 70 mode shuffle')
-    result = session.run('search "jazz" artists limit 5')
-    result = session.run('add spotify:track:abc to "Road Trip"')
+    result = session.run('play track "Bohemian Rhapsody" volume 70 mode shuffle')
+    result = session.run('search artist "jazz" limit 5')
+    result = session.run('library add track "Karma Police" "Road Trip"')
 
     session.close()
 """
@@ -29,14 +29,14 @@ from clautify.types import Config
 from clautify.utils.logger import NoopLogger
 
 _VALID_COMMANDS = (
-    "play, pause, resume, skip, seek, queue, like, unlike, follow, unfollow, "
-    "save, unsave, add...to, remove...from, create playlist, delete playlist, "
-    "search, now playing, get queue, get devices, library, info, history, recommend"
+    "Syntax: verb kind target. "
+    'play/queue/search/info kind "name"|ID, '
+    'library add/remove kind target [in playlist "name"], '
+    "pause, resume, skip, seek, status [queue|devices|history]"
 )
 
 _DEFAULT_CONFIG_DIR = Path.home() / ".config" / "clautify"
 _DEFAULT_SESSION_PATH = _DEFAULT_CONFIG_DIR / "session.json"
-_DEFAULT_CACHE_PATH = _DEFAULT_CONFIG_DIR / "name_cache.json"
 
 __all__ = ["SpotifySession", "parse", "DSLError"]
 
@@ -49,8 +49,8 @@ class SpotifySession:
     first playback command.
     """
 
-    def __init__(self, login: Login, eager: bool = True, cache_path: Union[Path, None] = _DEFAULT_CACHE_PATH):
-        self._executor = SpotifyExecutor(login, eager=eager, cache_path=cache_path)
+    def __init__(self, login: Login, eager: bool = True):
+        self._executor = SpotifyExecutor(login, eager=eager)
 
     @classmethod
     def setup(

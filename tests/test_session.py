@@ -1,11 +1,10 @@
-"""Tests for SpotifySession — the public API.
+"""Session-level tests: error handling, WS reconnect, setup/config.
 
-Tests run(command) end-to-end: parse → execute → result dict.
-SpotAPI classes are mocked at the module boundary (they make real HTTP calls).
-Assertions check the returned result dict, not internal mock calls.
+Resolution, dispatch, and parser shape are tested in test_dsl_v4.py.
+The session fixture lives in conftest.py.
 """
 
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -13,47 +12,7 @@ from clautify.dsl import SpotifySession
 from clautify.dsl.executor import DSLError
 from clautify.exceptions import WebSocketError
 
-# ── Fixtures ────────────────────────────────────────────────────────
-
-
-def _mock_player(**overrides):
-    p = MagicMock()
-    p.state = MagicMock()
-    p.active_id = "dev0"
-    p.device_id = "dev0"
-    dev = MagicMock()
-    dev.volume = 32768  # ~50%
-    dev.name = "Den"
-    dev.device_id = "dev0"
-    devices = MagicMock()
-    devices.devices = {"dev0": dev}
-    p.device_ids = devices
-    p.next_songs_in_queue = []
-    p.last_songs_played = []
-    for k, v in overrides.items():
-        setattr(p, k, v)
-    return p
-
-
-@pytest.fixture
-def session():
-    login = MagicMock()
-    with (
-        patch("clautify.dsl.executor.Player") as P,
-        patch("clautify.dsl.executor.Song") as S,
-        patch("clautify.dsl.executor.Artist") as A,
-        patch("clautify.dsl.executor.PrivatePlaylist") as PP,
-    ):
-        P.return_value = _mock_player()
-        S.return_value = MagicMock()
-        A.return_value = MagicMock()
-        PP.return_value = MagicMock()
-        s = SpotifySession(login, eager=False)
-        s._mocks = {"Player": P, "Song": S, "Artist": A, "PP": PP}
-        yield s
-
-
-# ── Actions ─────────────────────────────────────────────────────────
+# ── Smoke tests ────────────────────────────────────────────────────
 
 
 @pytest.mark.parametrize(
@@ -61,6 +20,8 @@ def session():
     [
         ("pause", "pause"),
         ("resume", "resume"),
+        ("skip 3", "skip"),
+        ("queue track 6rqhFgbbKwnb9MLmUQDhG6", "queue"),
     ],
 )
 def test_simple_actions(session, cmd, expected_action):
@@ -69,49 +30,16 @@ def test_simple_actions(session, cmd, expected_action):
     assert r["action"] == expected_action
 
 
-def test_skip(session):
-    r = session.run("skip 3")
-    assert r["status"] == "ok"
-    assert r["action"] == "skip"
-
-
-def test_play_uri(session):
-    r = session.run("play spotify:track:abc")
-    assert r["status"] == "ok"
-    assert r["action"] == "play"
-    assert r["kind"] == "track"
-
-
-def test_play_cached_string(session):
-    session._executor._cache.add("track", "jazz", "spotify:track:found")
-    r = session.run('play "jazz"')
-    assert r["status"] == "ok"
-    assert r["resolved_uri"] == "spotify:track:found"
-
-
-def test_play_uncached_string_raises(session):
-    with pytest.raises(DSLError, match="not found.*search first"):
-        session.run('play "nonexistent xyz"')
-
-
 def test_play_with_context(session):
-    r = session.run("play spotify:track:abc in spotify:playlist:def")
+    mock_song = session._mocks["Song"].return_value
+    mock_song.query_songs.return_value = {
+        "data": {
+            "searchV2": {"playlists": {"items": [{"data": {"name": "My Playlist", "uri": "spotify:playlist:pl123"}}]}}
+        }
+    }
+    r = session.run('play track 6rqhFgbbKwnb9MLmUQDhG6 in playlist "My Playlist"')
     assert r["status"] == "ok"
-    assert r["context"] == "spotify:playlist:def"
-
-
-def test_queue(session):
-    r = session.run("queue spotify:track:abc")
-    assert r["status"] == "ok"
-    assert r["action"] == "queue"
-
-
-# ── Table-driven actions ────────────────────────────────────────────
-
-
-def test_target_action(session):
-    r = session.run("like spotify:track:abc")
-    assert r["status"] == "ok"
+    assert r["context"] == "My Playlist"
 
 
 # ── State modifiers ─────────────────────────────────────────────────
@@ -135,33 +63,26 @@ def test_mode(session):
 
 
 def test_device_transfer(session):
-    r = session.run('on "Den"')
+    r = session.run('device "Den"')
     assert r["status"] == "ok"
     assert r["device"] == "Den"
 
 
 def test_device_not_found(session):
     with pytest.raises(DSLError, match="not found"):
-        session.run('on "Garage"')
+        session.run('device "Garage"')
 
 
 # ── Queries ─────────────────────────────────────────────────────────
 
 
-def test_now_playing(session):
-    r = session.run("now playing")
-    assert r["status"] == "ok"
-    assert r["query"] == "now_playing"
-    assert "data" in r
-
-
 def test_search(session):
     mock_song = session._mocks["Song"].return_value
     mock_song.query_songs.return_value = {"data": {"searchV2": {"tracksV2": {"items": []}}}}
-    r = session.run('search "jazz" tracks')
+    r = session.run('search track "jazz"')
     assert r["status"] == "ok"
     assert r["query"] == "search"
-    assert r["type"] == "tracks"
+    assert r["kind"] == "track"
 
 
 # ── Error handling ──────────────────────────────────────────────────

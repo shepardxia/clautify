@@ -66,7 +66,8 @@ class WebsocketStreamer:
         self.keep_alive_thread.start()
 
         atexit.register(self.ws.close)
-        signal.signal(signal.SIGINT, self.handle_interrupt)
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGINT, self.handle_interrupt)
 
     def register_device(self) -> None:
         url = "https://gue1-spclient.spotify.com/track-playback/v1/devices"

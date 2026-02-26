@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Generator, Mapping
 from typing import Any
 
@@ -8,6 +7,8 @@ from clautify.client import BaseClient
 from clautify.exceptions import AlbumError
 from clautify.http.request import TLSClient
 from clautify.types.annotations import enforce
+from clautify.utils.pagination import paginate
+from clautify.utils.strings import extract_spotify_id
 
 __all__ = ["PublicAlbum", "AlbumError"]
 
@@ -38,32 +39,21 @@ class PublicAlbum:
         language: str = "en",
     ) -> None:
         self.base = BaseClient(client=client, language=language)
-        self.album_id = album.split("album/")[-1] if "album" in album else album
+        self.album_id = extract_spotify_id(album, "album")
         self.album_link = f"https://open.spotify.com/album/{self.album_id}"
 
     def get_album_info(self, limit: int = 25, *, offset: int = 0) -> Mapping[str, Any]:
         """Gets the public public information"""
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        params = {
-            "operationName": "getAlbum",
-            "variables": json.dumps(
-                {
-                    "locale": "",
-                    "uri": f"spotify:album:{self.album_id}",
-                    "offset": offset,
-                    "limit": limit,
-                }
-            ),
-            "extensions": json.dumps(
-                {
-                    "persistedQuery": {
-                        "version": 1,
-                        "sha256Hash": self.base.part_hash("getAlbum"),
-                    }
-                }
-            ),
-        }
-
+        params = self.base.graphql_params(
+            "getAlbum",
+            {
+                "locale": "",
+                "uri": f"spotify:album:{self.album_id}",
+                "offset": offset,
+                "limit": limit,
+            },
+        )
         resp = self.base.client.post(url, params=params, authenticate=True)
 
         if resp.fail:
@@ -75,21 +65,10 @@ class PublicAlbum:
         return resp.response
 
     def paginate_album(self) -> Generator[Mapping[str, Any], None, None]:
-        """
-        Generator that fetches playlist information in chunks
-
-        NOTE: If total_count <= 343, then there is no need to paginate.
-        """
-        UPPER_LIMIT: int = 343
-        album = self.get_album_info(limit=UPPER_LIMIT)
-        total_count: int = album["data"]["albumUnion"]["tracksV2"]["totalCount"]
-
-        yield album["data"]["albumUnion"]["tracksV2"]["items"]
-
-        if total_count <= UPPER_LIMIT:
-            return
-
-        offset = UPPER_LIMIT
-        while offset < total_count:
-            yield self.get_album_info(limit=UPPER_LIMIT, offset=offset)["data"]["albumUnion"]["tracksV2"]["items"]
-            offset += UPPER_LIMIT
+        """Generator that fetches album tracks in chunks."""
+        return paginate(
+            lambda limit, offset: self.get_album_info(limit=limit, offset=offset),
+            "data.albumUnion.tracksV2.totalCount",
+            "data.albumUnion.tracksV2.items",
+            upper_limit=343,
+        )

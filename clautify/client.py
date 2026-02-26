@@ -209,6 +209,22 @@ class BaseClient:
 
         self.client_token = resp.response["granted_token"]["token"]
 
+    def graphql_params(self, operation: str, variables: dict) -> dict:
+        """Build query params dict for GET-style GraphQL requests."""
+        return {
+            "operationName": operation,
+            "variables": json.dumps(variables),
+            "extensions": json.dumps({"persistedQuery": {"version": 1, "sha256Hash": self.part_hash(operation)}}),
+        }
+
+    def graphql_payload(self, operation: str, variables: dict) -> dict:
+        """Build JSON body for POST-style GraphQL mutations."""
+        return {
+            "variables": variables,
+            "operationName": operation,
+            "extensions": {"persistedQuery": {"version": 1, "sha256Hash": self.part_hash(operation)}},
+        }
+
     def part_hash(self, name: str) -> str:
         if self.raw_hashes is _Undefined:
             self.get_sha256_hash()
