@@ -43,7 +43,7 @@ class PublicAlbum:
         self.album_link = f"https://open.spotify.com/album/{self.album_id}"
 
     def get_album_info(self, limit: int = 25, *, offset: int = 0) -> Mapping[str, Any]:
-        """Gets the public public information"""
+        """Gets the public information"""
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
         params = self.base.graphql_params(
             "getAlbum",

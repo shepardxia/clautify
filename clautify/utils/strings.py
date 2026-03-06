@@ -36,7 +36,7 @@ def extract_mappings(js_code: str) -> Tuple[Dict[int, str], Dict[int, str]]:
     pattern = r"\{\d+:\"[^\"]+\"(?:,\d+:\"[^\"]+\")*\}"
     matches = re.findall(pattern, js_code)
 
-    if len(matches) < 2:
+    if len(matches) < 5:
         raise ValueError("Could not find both mappings in the JS code.")
 
     mapping1 = ast.literal_eval(matches[3])

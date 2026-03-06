@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from clautify.client import RECAPTCHA_SITE_KEY
+from clautify import client as _client_mod
 from clautify.exceptions import LoginError
 from clautify.types import Config, SaverProtocol
 from clautify.types.annotations import enforce
@@ -107,9 +107,6 @@ class Login:
                 k, v = _k[0], _k[1]
                 cookies[k] = v
 
-        if isinstance(cookies, Mapping):
-            cookies = cookies  # autotype
-
         if not (cred and cookies):
             raise ValueError("Invalid dump format: must contain 'identifier', and 'cookies'")
 
@@ -147,10 +144,10 @@ class Login:
         self._authorized = value
 
     def __repr__(self) -> str:
-        return f"Login(password={self.password!r}, identifier_credentials={self.identifier_credentials!r})"
+        return f"Login(password='***', identifier_credentials={self.identifier_credentials!r})"
 
     def __str__(self) -> str:
-        return f"Logged in with ID={self.identifier_credentials}, password={self.password}"
+        return f"Logged in with ID={self.identifier_credentials}, password=***"
 
     def _get_add_cookie(self, _url: str | None = None) -> None:
         urls = ["https://open.spotify.com/", "https://pixel.spotify.com/v2/sync?ce=1&pp="] if not _url else [_url]
@@ -240,10 +237,10 @@ class Login:
             case "errorInvalidCredentials":
                 raise LoginError("Invalid Credentials", error=f"{str(self)}: {error_type}")
             case _:
-                raise LoginError("Unforseen Error", error=f"{str(self)}: {error_type}")
+                raise LoginError("Unforeseen Error", error=f"{str(self)}: {error_type}")
 
     def login(self) -> None:
-        """Preform user login."""
+        """Perform user login."""
         if self.logged_in:
             raise LoginError("User already logged in")
 
@@ -257,7 +254,7 @@ class Login:
 
         captcha_response = self.solver.solve_captcha(
             "https://accounts.spotify.com",
-            RECAPTCHA_SITE_KEY,
+            _client_mod.RECAPTCHA_SITE_KEY,
             "accounts/login",
             "v3",
         )

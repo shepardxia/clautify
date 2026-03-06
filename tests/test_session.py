@@ -25,7 +25,7 @@ from clautify.exceptions import WebSocketError
     ],
 )
 def test_simple_actions(session, cmd, expected_action):
-    r = session.run(cmd)
+    r = session.run(cmd, format=False)
     assert r["status"] == "ok"
     assert r["action"] == expected_action
 
@@ -37,7 +37,7 @@ def test_play_with_context(session):
             "searchV2": {"playlists": {"items": [{"data": {"name": "My Playlist", "uri": "spotify:playlist:pl123"}}]}}
         }
     }
-    r = session.run('play track 6rqhFgbbKwnb9MLmUQDhG6 in playlist "My Playlist"')
+    r = session.run('play track 6rqhFgbbKwnb9MLmUQDhG6 in playlist "My Playlist"', format=False)
     assert r["status"] == "ok"
     assert r["context"] == "My Playlist"
 
@@ -46,7 +46,7 @@ def test_play_with_context(session):
 
 
 def test_volume(session):
-    r = session.run("volume 70")
+    r = session.run("volume 70", format=False)
     assert r["status"] == "ok"
     assert r["volume"] == 70.0
 
@@ -57,13 +57,13 @@ def test_volume_out_of_range(session):
 
 
 def test_mode(session):
-    r = session.run("mode shuffle")
+    r = session.run("mode shuffle", format=False)
     assert r["status"] == "ok"
     assert r["mode"] == "shuffle"
 
 
 def test_device_transfer(session):
-    r = session.run('device "Den"')
+    r = session.run('device "Den"', format=False)
     assert r["status"] == "ok"
     assert r["device"] == "Den"
 
@@ -79,7 +79,7 @@ def test_device_not_found(session):
 def test_search(session):
     mock_song = session._mocks["Song"].return_value
     mock_song.query_songs.return_value = {"data": {"searchV2": {"tracksV2": {"items": []}}}}
-    r = session.run('search track "jazz"')
+    r = session.run('search track "jazz"', format=False)
     assert r["status"] == "ok"
     assert r["query"] == "search"
     assert r["kind"] == "track"
@@ -119,7 +119,7 @@ def test_ws_error_retries_and_succeeds(session):
             raise WebSocketError("disconnected")
 
     player.pause.side_effect = pause_side_effect
-    r = session.run("pause")
+    r = session.run("pause", format=False)
     assert r["status"] == "ok"
     assert call_count == 2  # first failed, second succeeded
 

@@ -332,7 +332,7 @@ class TestResolveQuotedString:
     )
     def test_play_quoted_resolves(self, session, kind, cmd, stub):
         {"track": _stub_track_search, "album": _stub_album_search}[stub](session)
-        r = session.run(cmd)
+        r = session.run(cmd, format=False)
         assert r["status"] == "ok"
         assert r["action"] == "play"
 
@@ -340,7 +340,7 @@ class TestResolveQuotedString:
         _stub_artist_search(session, "Deafheaven", "spotify:artist:4O15Nl")
         mock_artist = session._mocks["Artist"].return_value
         mock_artist.get_artist.return_value = {"name": "Deafheaven"}
-        r = session.run('info artist "Deafheaven"')
+        r = session.run('info artist "Deafheaven"', format=False)
         assert r["status"] == "ok"
         assert r["query"] == "info"
 
@@ -364,7 +364,7 @@ class TestResolveBareId:
         ids=["play-track", "play-album", "queue-track"],
     )
     def test_bare_id_no_search(self, session, cmd):
-        r = session.run(cmd)
+        r = session.run(cmd, format=False)
         assert r["status"] == "ok"
         session._mocks["Song"].return_value.query_songs.assert_not_called()
         session._mocks["Artist"].return_value.query_artists.assert_not_called()
@@ -377,7 +377,7 @@ class TestSearchArtistAutoInfo:
         _stub_artist_search(session, "Deafheaven", "spotify:artist:4O15Nl")
         mock_artist = session._mocks["Artist"].return_value
         mock_artist.get_artist.return_value = {"data": {"artistUnion": {"profile": {"name": "Deafheaven"}}}}
-        r = session.run('search artist "Deafheaven"')
+        r = session.run('search artist "Deafheaven"', format=False)
         assert r["query"] == "info"
         assert r["kind"] == "artist"
         mock_artist.get_artist.assert_called_once()
@@ -386,12 +386,12 @@ class TestSearchArtistAutoInfo:
         _stub_artist_search(session, "Deafheaven", "spotify:artist:4O15Nl")
         mock_artist = session._mocks["Artist"].return_value
         mock_artist.get_artist.return_value = {"data": {"artistUnion": {"profile": {"name": "Deafheaven"}}}}
-        r = session.run('search artist "deafheaven"')
+        r = session.run('search artist "deafheaven"', format=False)
         assert r["query"] == "info"
 
     def test_no_exact_match_returns_search(self, session):
         _stub_artist_search(session, "Deafhaven", "spotify:artist:xyz")
-        r = session.run('search artist "Deafheaven"')
+        r = session.run('search artist "Deafheaven"', format=False)
         assert r["query"] == "search"
         assert r["kind"] == "artist"
 
@@ -410,7 +410,7 @@ class TestLibraryExecution:
     )
     def test_library_track_artist(self, session, action, kind, stub_fn, mock_key, method):
         stub_fn(session)
-        r = session.run(f'library {action} {kind} "test"')
+        r = session.run(f'library {action} {kind} "test"', format=False)
         assert r["status"] == "ok"
         getattr(session._mocks[mock_key].return_value, method).assert_called_once()
 
@@ -422,7 +422,7 @@ class TestLibraryExecution:
         ],
     )
     def test_library_playlist(self, session, action, method):
-        r = session.run(f"library {action} playlist 37i9dQZF1DXcBWIGoYBM5M")
+        r = session.run(f"library {action} playlist 37i9dQZF1DXcBWIGoYBM5M", format=False)
         assert r["status"] == "ok"
         getattr(session._mocks["PP"].return_value, method).assert_called_once()
 
@@ -431,7 +431,7 @@ class TestStatusQuery:
     """status returns now_playing, queue, devices, history in one call."""
 
     def test_status_returns_all_sections(self, session):
-        r = session.run("status")
+        r = session.run("status", format=False)
         assert r["status"] == "ok"
         assert r["query"] == "status"
         assert "now_playing" in r
@@ -440,6 +440,6 @@ class TestStatusQuery:
         assert "history" in r
 
     def test_status_limit_caps_queue_and_history(self, session):
-        r = session.run("status limit 2")
+        r = session.run("status limit 2", format=False)
         assert r["status"] == "ok"
         assert r["limit"] == 2

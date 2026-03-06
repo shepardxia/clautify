@@ -269,7 +269,7 @@ class Player(PlayerStatus):
             extended_uids, stop = Song.parse_playlist_items(
                 items,
                 song_id=track,
-                all_instances=True,
+                first_only=True,
             )
             uids.extend(extended_uids)
 

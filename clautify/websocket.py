@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import atexit
 import json
-import signal
 import threading
 import time
 from typing import Any, Dict
@@ -66,8 +65,6 @@ class WebsocketStreamer:
         self.keep_alive_thread.start()
 
         atexit.register(self.ws.close)
-        if threading.current_thread() is threading.main_thread():
-            signal.signal(signal.SIGINT, self.handle_interrupt)
 
     def register_device(self) -> None:
         url = "https://gue1-spclient.spotify.com/track-playback/v1/devices"
@@ -160,8 +157,3 @@ class WebsocketStreamer:
             raise ValueError("Invalid init packet")
 
         return packet["headers"]["Spotify-Connection-Id"]
-
-    def handle_interrupt(self, signum: int, frame: Any) -> None:
-        """Handle interrupt signal (Ctrl+C)"""
-        self.ws.close()
-        exit(0)

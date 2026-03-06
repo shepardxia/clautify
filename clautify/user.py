@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from clautify import client as _client_mod
 from clautify import utils
 from clautify.exceptions import UserError
-from clautify.login import RECAPTCHA_SITE_KEY, Login
+from clautify.login import Login
 from clautify.types.annotations import enforce
 
 __all__ = ["User", "UserError"]
@@ -94,7 +95,7 @@ class User:
 
         captcha_response = self.login.solver.solve_captcha(
             "https://www.spotify.com",
-            RECAPTCHA_SITE_KEY,
+            _client_mod.RECAPTCHA_SITE_KEY,
             "account_settings/profile_update",
             "v3",
         )

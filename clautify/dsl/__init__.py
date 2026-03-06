@@ -23,6 +23,7 @@ from typing import Any, Dict, Union
 from lark.exceptions import UnexpectedInput
 
 from clautify.dsl.executor import DSLError, SpotifyExecutor
+from clautify.dsl.format import format_result
 from clautify.dsl.parser import parse
 from clautify.login import Login
 from clautify.types import Config
@@ -38,7 +39,7 @@ _VALID_COMMANDS = (
 _DEFAULT_CONFIG_DIR = Path.home() / ".config" / "clautify"
 _DEFAULT_SESSION_PATH = _DEFAULT_CONFIG_DIR / "session.json"
 
-__all__ = ["SpotifySession", "parse", "DSLError"]
+__all__ = ["SpotifySession", "parse", "format_result", "DSLError"]
 
 
 class SpotifySession:
@@ -114,11 +115,13 @@ class SpotifySession:
         except Exception as e:
             return {"status": "error", "authenticated": False, "error": str(e)}
 
-    def run(self, command: str) -> Dict[str, Any]:
+    def run(self, command: str, *, format: bool = True) -> Union[str, Dict[str, Any]]:
         """Parse and execute a DSL command string.
 
-        Returns a result dict with a "status" key ("ok" on success)
-        plus command-specific data.
+        Args:
+            command: DSL command string.
+            format: If True (default), return a concise human-readable string.
+                If False, return the raw result dict.
 
         Raises DSLError on parse or execution failure.
         """
@@ -129,7 +132,8 @@ class SpotifySession:
         except Exception as e:
             raise DSLError(f"Parse error: {e}") from e
 
-        return self._executor.execute(parsed)
+        result = self._executor.execute(parsed)
+        return format_result(result) if format else result
 
     @property
     def max_volume(self) -> float:

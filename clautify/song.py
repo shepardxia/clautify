@@ -15,7 +15,7 @@ __all__ = ["Song", "SongError"]
 @enforce
 class Song:
     """
-    Extends the PrivatePlaylist class with methods that can only be used while logged in.
+    Wraps a PrivatePlaylist with methods that can only be used while logged in.
     These methods interact with songs and tend to be used in the context of a playlist.
 
     Parameters
@@ -140,7 +140,7 @@ class Song:
         *,
         song_id: str | None = None,
         song_name: str | None = None,
-        all_instances: bool = False,
+        first_only: bool = False,
     ) -> Tuple[List[str], bool]:
         uids: List[str] = []
         for item in items:
@@ -150,7 +150,7 @@ class Song:
             if is_song_id or is_song_name:
                 uids.append(item["uid"])
 
-                if all_instances:
+                if first_only:
                     return uids, True
 
         return uids, False
@@ -158,23 +158,20 @@ class Song:
     def remove_song_from_playlist(
         self,
         *,
-        all_instances: bool = False,
+        first_only: bool = False,
         uid: str | None = None,
         song_id: str | None = None,
         song_name: str | None = None,
     ) -> None:
         """
         Removes a song from the playlist.
-        If all_instances is True, only song_name can be used.
+        If first_only is True, only the first matching instance is removed.
         """
         if song_id:
             song_id = extract_spotify_id(song_id, "track")
 
         if not (song_id or song_name or uid):
             raise ValueError("Must provide either song_id or song_name or uid")
-
-        if all_instances and song_id:
-            raise ValueError("Cannot provide both song_id and all_instances")
 
         if not self.playlist or not hasattr(self.playlist, "playlist_id"):
             raise ValueError("Playlist not set")
@@ -189,7 +186,7 @@ class Song:
                     items,
                     song_id=song_id,
                     song_name=song_name,
-                    all_instances=all_instances,
+                    first_only=first_only,
                 )
                 uids.extend(extended_uids)
 
@@ -205,9 +202,6 @@ class Song:
         self._stage_remove_song(uids)
 
     def like_song(self, song_id: str, /) -> None:
-        if not self.playlist or not hasattr(self.playlist, "playlist_id"):
-            raise ValueError("Playlist not set")
-
         song_id = extract_spotify_id(song_id, "track")
 
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
@@ -223,9 +217,6 @@ class Song:
             raise SongError("Could not like song", error=resp.error.string)
 
     def unlike_song(self, song_id: str, /) -> None:
-        if not self.playlist or not hasattr(self.playlist, "playlist_id"):
-            raise ValueError("Playlist not set")
-
         song_id = extract_spotify_id(song_id, "track")
 
         url = "https://api-partner.spotify.com/pathfinder/v1/query"

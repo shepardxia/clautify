@@ -4,8 +4,6 @@ from typing import Any, List, Literal, Mapping, Protocol
 
 from typing_extensions import runtime_checkable
 
-from clautify.http.request import StdClient
-
 __all__ = ["CaptchaProtocol", "LoggerProtocol", "SaverProtocol"]
 
 
@@ -14,7 +12,7 @@ class CaptchaProtocol(Protocol):
     def __init__(
         self: "CaptchaProtocol",
         api_key: str,
-        client: StdClient = StdClient(3),
+        client: Any = None,
         *,
         retries: int = 120,
         proxy: str | None = None,
