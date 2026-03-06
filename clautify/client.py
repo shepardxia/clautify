@@ -135,7 +135,6 @@ class BaseClient:
                 "productType": "web-player",
                 "totp": totp,
                 "totpVer": version,
-                "totpVer": version,
                 "totpServer": totp,
             }
             resp = self.client.get("https://open.spotify.com/api/token", params=query)

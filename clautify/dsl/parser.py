@@ -152,7 +152,10 @@ class SpotifyTransformer(Transformer):
         return result
 
 
+_transformer = SpotifyTransformer()
+
+
 def parse(command: str) -> Dict[str, Any]:
     """Parse a DSL command string into a command dict."""
     tree = _parser.parse(command)
-    return SpotifyTransformer().transform(tree)
+    return _transformer.transform(tree)

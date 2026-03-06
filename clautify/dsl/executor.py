@@ -10,6 +10,7 @@ from clautify.login import Login
 from clautify.player import Player
 from clautify.playlist import PrivatePlaylist
 from clautify.song import Song
+from clautify.utils.strings import deep_get
 from clautify.utils.strings import extract_spotify_id as _extract_id
 
 
@@ -19,18 +20,6 @@ class DSLError(Exception):
     def __init__(self, message: str, command: Optional[Dict[str, Any]] = None):
         self.command = command
         super().__init__(message)
-
-
-def _deep_get(data: Any, *keys: str, default: Any = None) -> Any:
-    """Safely traverse nested dicts by key path, returning default on any miss."""
-    for key in keys:
-        if isinstance(data, dict):
-            data = data.get(key)
-        else:
-            return default
-        if data is None:
-            return default
-    return data
 
 
 _BARE_ID_RE = re.compile(r"^[a-zA-Z0-9]{22}$")
@@ -94,8 +83,7 @@ class SpotifyExecutor:
     @property
     def song(self) -> Song:
         if self._song is None:
-            sentinel = PrivatePlaylist(self._login, "__sentinel__")
-            self._song = Song(playlist=sentinel)
+            self._song = Song(playlist=None, client=self._login.client)
         return self._song
 
     @property
@@ -128,19 +116,19 @@ class SpotifyExecutor:
         """Search Spotify for name, return top result URI."""
         if kind == "artist":
             raw = self.artist.query_artists(name, limit=1)
-            items = _deep_get(raw, "data", "searchV2", "artists", "items", default=[])
+            items = deep_get(raw, "data", "searchV2", "artists", "items", default=[])
             if not items:
                 raise DSLError(f'No results for "{name}"', command=cmd)
-            uri = _deep_get(items[0], "data", "uri")
+            uri = deep_get(items[0], "data", "uri")
         else:
             raw = self.song.query_songs(name, limit=1)
             section = self._extract_search_section(raw, kind)
             if not isinstance(section, list) or not section:
                 raise DSLError(f'No results for "{name}"', command=cmd)
             if kind == "track":
-                uri = _deep_get(section[0], "item", "data", "uri")
+                uri = deep_get(section[0], "item", "data", "uri")
             else:
-                uri = _deep_get(section[0], "data", "uri")
+                uri = deep_get(section[0], "data", "uri")
 
         if not uri:
             raise DSLError(f'No results for "{name}"', command=cmd)
@@ -151,13 +139,7 @@ class SpotifyExecutor:
         path = _SEARCH_SECTION_PATH.get(kind)
         if not path:
             return raw
-        result = raw
-        for key in path:
-            if isinstance(result, dict):
-                result = result.get(key, {})
-            else:
-                return raw
-        return result
+        return deep_get(raw, *path, default=raw)
 
     def _resolve_device_id(self, name: str) -> str:
         """Resolve a friendly device name to a device ID (case-insensitive)."""
@@ -311,54 +293,44 @@ class SpotifyExecutor:
         return {"status": "ok", "action": "queue", "kind": kind, "targets": queued}
 
     def _action_library_add(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
-        kind = cmd["kind"]
-        targets = cmd["targets"]
-        context = cmd.get("context")
-        context_kind = cmd.get("context_kind")
-
-        for target in targets:
-            uri = self._resolve_target(kind, target, cmd)
-            bare_id = _extract_id(uri, kind)
-
-            if context:
-                playlist_uri = self._resolve_target(context_kind, context, cmd)
-                pl = PrivatePlaylist(self._login, _extract_id(playlist_uri, "playlist"))
-                Song(playlist=pl).add_song_to_playlist(bare_id)
-            elif kind == "track":
-                self.song.like_song(bare_id)
-            elif kind == "artist":
-                self.artist.follow(bare_id)
-            elif kind == "playlist":
-                PrivatePlaylist(self._login, bare_id).add_to_library()
-            elif kind == "album":
-                raise DSLError("Album library management not yet supported", command=cmd)
-
-        return {"status": "ok", "action": "library_add", "kind": kind, "targets": targets}
+        return self._library_mutate(cmd, "add")
 
     def _action_library_remove(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
+        return self._library_mutate(cmd, "remove")
+
+    def _library_mutate(self, cmd: Dict[str, Any], op: str) -> Dict[str, Any]:
         kind = cmd["kind"]
         targets = cmd["targets"]
         context = cmd.get("context")
         context_kind = cmd.get("context_kind")
 
+        # Resolve context once outside the loop
+        context_pl = None
+        if context:
+            playlist_uri = self._resolve_target(context_kind, context, cmd)
+            context_pl = PrivatePlaylist(self._login, _extract_id(playlist_uri, "playlist"))
+            context_song = Song(playlist=context_pl)
+
         for target in targets:
             uri = self._resolve_target(kind, target, cmd)
             bare_id = _extract_id(uri, kind)
 
-            if context:
-                playlist_uri = self._resolve_target(context_kind, context, cmd)
-                pl = PrivatePlaylist(self._login, _extract_id(playlist_uri, "playlist"))
-                Song(playlist=pl).remove_song_from_playlist(song_id=bare_id)
+            if context_pl:
+                if op == "add":
+                    context_song.add_song_to_playlist(bare_id)
+                else:
+                    context_song.remove_song_from_playlist(song_id=bare_id)
             elif kind == "track":
-                self.song.unlike_song(bare_id)
+                (self.song.like_song if op == "add" else self.song.unlike_song)(bare_id)
             elif kind == "artist":
-                self.artist.unfollow(bare_id)
+                (self.artist.follow if op == "add" else self.artist.unfollow)(bare_id)
             elif kind == "playlist":
-                PrivatePlaylist(self._login, bare_id).remove_from_library()
+                pl = PrivatePlaylist(self._login, bare_id)
+                (pl.add_to_library if op == "add" else pl.remove_from_library)()
             elif kind == "album":
                 raise DSLError("Album library management not yet supported", command=cmd)
 
-        return {"status": "ok", "action": "library_remove", "kind": kind, "targets": targets}
+        return {"status": "ok", "action": f"library_{op}", "kind": kind, "targets": targets}
 
     def _action_library_create(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
         name = cmd["target"]
@@ -409,9 +381,9 @@ class SpotifyExecutor:
 
         # Auto-promote: exact artist match → return info instead of ID list
         if kind == "artist" and len(terms) == 1 and all_results:
-            first_name = _deep_get(all_results[0], "data", "profile", "name", default="")
+            first_name = deep_get(all_results[0], "data", "profile", "name", default="")
             if first_name.lower() == terms[0].lower():
-                uri = _deep_get(all_results[0], "data", "uri", default="")
+                uri = deep_get(all_results[0], "data", "uri", default="")
                 if uri:
                     bare_id = _extract_id(uri, "artist")
                     data = self.artist.get_artist(bare_id)
@@ -421,14 +393,18 @@ class SpotifyExecutor:
 
     def _query_status(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
         limit = cmd.get("limit", 5)
+        # Single renew_state() call fetches all data at once
+        self.player.renew_state()
+        state = self.player.saved_state
+        devices = self.player.saved_device_ids
         return {
             "status": "ok",
             "query": "status",
             "limit": limit,
-            "now_playing": self.player.state,
-            "queue": self.player.next_songs_in_queue[:limit],
-            "devices": self.player.device_ids,
-            "history": self.player.last_songs_played[:limit],
+            "now_playing": state,
+            "queue": state.next_tracks[:limit],
+            "devices": devices,
+            "history": state.prev_tracks[:limit],
         }
 
     def _query_info(self, cmd: Dict[str, Any]) -> Dict[str, Any]:

@@ -127,83 +127,63 @@ class PrivatePlaylist:
         if not playlist:
             raise ValueError("Playlist not set")
 
-        setattr(self, "playlist_id", playlist)
+        self.playlist_id = playlist
         self._playlist = True
+
+    def _rootlist_change(self, ops: list, error_msg: str) -> None:
+        """Send a rootlist/changes request with the given ops."""
+        url = f"https://spclient.wg.spotify.com/playlist/v2/user/{self.user.username}/rootlist/changes"
+        payload = {
+            "deltas": [{"ops": ops, "info": {"source": {"client": 5}}}],
+            "wantResultingRevisions": False,
+            "wantSyncResult": False,
+            "nonces": [],
+        }
+        resp = self.login.client.post(url, json=payload, authenticate=True)
+        if resp.fail:
+            raise PlaylistError(error_msg, error=resp.error.string)
+
+    def _rootlist_add(self, uri: str, error_msg: str) -> None:
+        """Add a URI to the rootlist."""
+        self._rootlist_change(
+            [
+                {
+                    "kind": 2,
+                    "add": {
+                        "items": [
+                            {
+                                "uri": uri,
+                                "attributes": {
+                                    "timestamp": int(time.time()),
+                                    "formatAttributes": [],
+                                    "availableSignals": [],
+                                },
+                            }
+                        ],
+                        "addFirst": True,
+                    },
+                }
+            ],
+            error_msg,
+        )
 
     def add_to_library(self) -> None:
         """Adds the playlist to your library"""
         if not self._playlist:
             raise ValueError("Playlist not set")
-
-        url = f"https://spclient.wg.spotify.com/playlist/v2/user/{self.user.username}/rootlist/changes"
-        payload = {
-            "deltas": [
-                {
-                    "ops": [
-                        {
-                            "kind": 2,
-                            "add": {
-                                "items": [
-                                    {
-                                        "uri": f"spotify:playlist:{self.playlist_id}",
-                                        "attributes": {
-                                            "timestamp": int(time.time()),
-                                            "formatAttributes": [],
-                                            "availableSignals": [],
-                                        },
-                                    }
-                                ],
-                                "addFirst": True,
-                            },
-                        }
-                    ],
-                    "info": {"source": {"client": 5}},
-                }
-            ],
-            "wantResultingRevisions": False,
-            "wantSyncResult": False,
-            "nonces": [],
-        }
-
-        resp = self.login.client.post(url, json=payload, authenticate=True)
-
-        if resp.fail:
-            raise PlaylistError("Could not add playlist to library", error=resp.error.string)
+        self._rootlist_add(f"spotify:playlist:{self.playlist_id}", "Could not add playlist to library")
 
     def remove_from_library(self) -> None:
         """Removes the playlist from your library"""
         if not self._playlist:
             raise ValueError("Playlist not set")
-
-        url = f"https://spclient.wg.spotify.com/playlist/v2/user/{self.user.username}/rootlist/changes"
-        payload = {
-            "deltas": [
-                {
-                    "ops": [
-                        {
-                            "kind": 3,
-                            "rem": {
-                                "items": [{"uri": f"spotify:playlist:{self.playlist_id}"}],
-                                "itemsAsKey": True,
-                            },
-                        }
-                    ],
-                    "info": {"source": {"client": 5}},
-                }
-            ],
-            "wantResultingRevisions": False,
-            "wantSyncResult": False,
-            "nonces": [],
-        }
-
-        resp = self.login.client.post(url, json=payload, authenticate=True)
-
-        if resp.fail:
-            raise PlaylistError("Could not remove playlist from library", error=resp.error.string)
+        self._rootlist_change(
+            [{"kind": 3, "rem": {"items": [{"uri": f"spotify:playlist:{self.playlist_id}"}], "itemsAsKey": True}}],
+            "Could not remove playlist from library",
+        )
 
     def delete_playlist(self) -> None:
         """Deletes the playlist from your library"""
-        # They are the same requests
         return self.remove_from_library()
 
     def get_library(
@@ -279,41 +259,7 @@ class PrivatePlaylist:
     def create_playlist(self, name: str) -> str:
         """Creates a new playlist"""
         playlist_id = self._stage_create_playlist(name)
-        url = f"https://spclient.wg.spotify.com/playlist/v2/user/{self.user.username}/rootlist/changes"
-        payload = {
-            "deltas": [
-                {
-                    "ops": [
-                        {
-                            "kind": 2,
-                            "add": {
-                                "items": [
-                                    {
-                                        "uri": playlist_id,
-                                        "attributes": {
-                                            "timestamp": int(time.time()),
-                                            "formatAttributes": [],
-                                            "availableSignals": [],
-                                        },
-                                    }
-                                ],
-                                "addFirst": True,
-                            },
-                        }
-                    ],
-                    "info": {"source": {"client": 5}},
-                }
-            ],
-            "wantResultingRevisions": False,
-            "wantSyncResult": False,
-            "nonces": [],
-        }
-
-        resp = self.login.client.post(url, json=payload, authenticate=True)
-
-        if resp.fail:
-            raise PlaylistError("Could not create playlist", error=resp.error.string)
-
+        self._rootlist_add(playlist_id, "Could not create playlist")
         return playlist_id
 
     def recommended_songs(self, num_songs: int = 20) -> Mapping[str, Any]:

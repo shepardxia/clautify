@@ -72,14 +72,15 @@ class TLSClient(Session):
 
         # Spotify doesn't set content-type for some reason?
         json_encoded = "application/json" in headers.get("content-type", "")
-        is_Dict = True
 
-        try:
-            json.loads(body)  # type: ignore
-        except json.JSONDecodeError:
-            is_Dict = False
+        if not json_encoded:
+            try:
+                json.loads(body)  # type: ignore
+                json_encoded = True
+            except (json.JSONDecodeError, TypeError):
+                pass
 
-        if json_encoded or is_Dict:
+        if json_encoded:
             json_formatted = response.json()
             body = json_formatted if isinstance(json_formatted, Dict) else body
 

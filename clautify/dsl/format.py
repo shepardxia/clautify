@@ -9,17 +9,9 @@ import logging
 import re
 from typing import Any
 
+from clautify.utils.strings import deep_get, extract_spotify_id
+
 logger = logging.getLogger(__name__)
-
-
-def _dig(d: Any, *keys: str, default: Any = None) -> Any:
-    """Safely navigate nested dicts: _dig(d, 'a', 'b') == d['a']['b']."""
-    for k in keys:
-        if isinstance(d, dict):
-            d = d.get(k)
-        else:
-            return default
-    return d if d is not None else default
 
 
 def _ms_to_timestamp(ms: Any) -> str:
@@ -33,9 +25,13 @@ def _ms_to_timestamp(ms: Any) -> str:
 
 
 def _bare_id(uri: str) -> str:
-    """Extract the 22-char bare ID from a spotify URI, or return as-is."""
-    if uri and ":" in uri:
-        return uri.rsplit(":", 1)[-1]
+    """Extract the bare ID from a spotify URI, or return as-is."""
+    if not uri:
+        return uri
+    # Detect kind from URI (spotify:track:xxx → "track")
+    parts = uri.split(":")
+    if len(parts) >= 3:
+        return extract_spotify_id(uri, parts[1])
     return uri
 
 
@@ -89,38 +85,38 @@ def _fmt_search(result: dict) -> str:
     for item in data:
         try:
             if kind == "artist":
-                name = _dig(item, "data", "profile", "name", default="?")
-                uri = _dig(item, "data", "uri", default="")
+                name = deep_get(item, "data", "profile", "name", default="?")
+                uri = deep_get(item, "data", "uri", default="")
                 bid = _bare_id(uri) if uri else ""
                 lines.append(f"{bid}  {name}" if bid else name)
             elif kind == "track":
-                d = _dig(item, "item", "data", default={})
+                d = deep_get(item, "item", "data", default={})
                 uri = d.get("uri", "")
                 bid = _bare_id(uri) if uri else ""
                 display = _track_line(
                     d.get("name", "?"),
                     _first_artist(d.get("artists", {})),
-                    _dig(d, "albumOfTrack", "name", default=""),
+                    deep_get(d, "albumOfTrack", "name", default=""),
                 )
                 lines.append(f"{bid}  {display}" if bid else display)
             elif kind == "album":
-                d = _dig(item, "data", default={})
+                d = deep_get(item, "data", default={})
                 uri = d.get("uri", "")
                 bid = _bare_id(uri) if uri else ""
                 display = _track_line(d.get("name", "?"), _first_artist(d.get("artists", {})))
                 lines.append(f"{bid}  {display}" if bid else display)
             elif kind == "playlist":
-                d = _dig(item, "data", default={})
+                d = deep_get(item, "data", default={})
                 uri = d.get("uri", "")
                 bid = _bare_id(uri) if uri else ""
-                owner = _dig(d, "ownerV2", "data", "name", default="?")
-                count = _dig(d, "content", "totalCount")
+                owner = deep_get(d, "ownerV2", "data", "name", default="?")
+                count = deep_get(d, "content", "totalCount")
                 display = f"{d.get('name', '?')} - {owner}"
                 if count:
                     display += f" ({count} tracks)"
                 lines.append(f"{bid}  {display}" if bid else display)
             else:
-                lines.append(_dig(item, "data", "name", default="?"))
+                lines.append(deep_get(item, "data", "name", default="?"))
         except (KeyError, TypeError, IndexError):
             continue
     return "\n".join(lines) if lines else "No results."
@@ -195,7 +191,7 @@ def _fmt_devices(result: dict) -> str:
 
 
 def _fmt_recommend(result: dict) -> str:
-    tracks = _dig(result, "data", "recommendedTracks", default=[])
+    tracks = deep_get(result, "data", "recommendedTracks", default=[])
     if not tracks:
         return "No recommendations."
 
@@ -204,14 +200,14 @@ def _fmt_recommend(result: dict) -> str:
         try:
             artists = t.get("artists", [])
             artist = artists[0]["name"] if artists else "?"
-            lines.append(_track_line(t["name"], artist, _dig(t, "album", "name", default="")))
+            lines.append(_track_line(t["name"], artist, deep_get(t, "album", "name", default="")))
         except (KeyError, TypeError, IndexError):
             continue
     return "\n".join(lines) if lines else "No recommendations."
 
 
 def _fmt_library_list(result: dict) -> str:
-    items = _dig(result, "data", "data", "me", "libraryV3", "items")
+    items = deep_get(result, "data", "data", "me", "libraryV3", "items")
     if not items:
         return "Library empty."
 
@@ -220,9 +216,9 @@ def _fmt_library_list(result: dict) -> str:
     # Detect current user for my-vs-saved classification
     user_name = None
     for item in items:
-        uri = _dig(item, "item", "data", "ownerV2", "data", "uri", default="")
+        uri = deep_get(item, "item", "data", "ownerV2", "data", "uri", default="")
         if uri.startswith("spotify:user:"):
-            user_name = _dig(item, "item", "data", "ownerV2", "data", "name")
+            user_name = deep_get(item, "item", "data", "ownerV2", "data", "name")
             break
 
     buckets: dict[str, list[str]] = {
@@ -233,7 +229,7 @@ def _fmt_library_list(result: dict) -> str:
     }
 
     for item in items:
-        d = _dig(item, "item", "data", default={})
+        d = deep_get(item, "item", "data", default={})
         typename = d.get("__typename", "")
         name = d.get("name", "?")
 
@@ -245,7 +241,7 @@ def _fmt_library_list(result: dict) -> str:
                 continue
             buckets["My Playlists"].append(f"{name} ({d.get('count', '?')} tracks)")
         elif "Playlist" in typename:
-            owner = _dig(d, "ownerV2", "data", "name", default="?")
+            owner = deep_get(d, "ownerV2", "data", "name", default="?")
             if user_name and owner == user_name:
                 buckets["My Playlists"].append(name)
             else:
@@ -253,7 +249,7 @@ def _fmt_library_list(result: dict) -> str:
         elif "Album" in typename:
             buckets["Albums"].append(_track_line(name, _first_artist(d.get("artists", {}))))
         elif "Artist" in typename:
-            buckets["Following"].append(_dig(d, "profile", "name", default=name))
+            buckets["Following"].append(deep_get(d, "profile", "name", default=name))
 
     sections = []
     for label, entries in buckets.items():
@@ -271,61 +267,58 @@ def _fmt_info(result: dict) -> str:
 
     try:
         if kind == "artist":
-            a = _dig(data, "data", "artistUnion", default={})
-            name = _dig(a, "profile", "name", default="?")
-            listeners = _dig(a, "stats", "monthlyListeners", default=0)
-            rank = _dig(a, "stats", "worldRank")
+            a = deep_get(data, "data", "artistUnion", default={})
+            name = deep_get(a, "profile", "name", default="?")
+            listeners = deep_get(a, "stats", "monthlyListeners", default=0)
+            rank = deep_get(a, "stats", "worldRank")
             stats = [f"{listeners:,} monthly listeners" if listeners else "", f"#{rank} worldwide" if rank else ""]
             lines = [name] + ([", ".join(s for s in stats if s)] if any(stats) else [])
 
-            bio = _dig(a, "profile", "biography", "text", default="")
+            bio = deep_get(a, "profile", "biography", "text", default="")
             if bio:
                 bio = re.sub(r"<[^>]+>", "", bio).split("\n")[0].strip()[:300]
                 if bio:
                     lines += ["", bio]
 
-            lines += _section(
-                "Top tracks",
-                [_dig(t, "track", "name") for t in _dig(a, "discography", "topTracks", "items", default=[])[:5]],
-            )
+            top = deep_get(a, "discography", "topTracks", "items", default=[])[:5]
+            lines += _section("Top tracks", [deep_get(t, "track", "name") for t in top])
 
             album_names = []
-            for al in _dig(a, "discography", "albums", "items", default=[])[:10]:
-                r = (_dig(al, "releases", "items") or [{}])[0]
+            for al in deep_get(a, "discography", "albums", "items", default=[])[:10]:
+                r = (deep_get(al, "releases", "items") or [{}])[0]
                 if r.get("name"):
-                    y = _dig(r, "date", "year", default="")
+                    y = deep_get(r, "date", "year", default="")
                     album_names.append(f"{r['name']} ({y})" if y else r["name"])
             lines += _section("Albums", album_names)
             lines += _section(
                 "Related artists",
                 [
-                    _dig(r, "profile", "name")
-                    for r in _dig(a, "relatedContent", "relatedArtists", "items", default=[])[:10]
+                    deep_get(r, "profile", "name")
+                    for r in deep_get(a, "relatedContent", "relatedArtists", "items", default=[])[:10]
                 ],
             )
             return "\n".join(lines)
 
         if kind == "album":
-            al = _dig(data, "data", "albumUnion", default={})
+            al = deep_get(data, "data", "albumUnion", default={})
             name, artist = al.get("name", "?"), _first_artist(al.get("artists", {}))
-            year = _dig(al, "date", "year") or (_dig(al, "date", "isoString", default="") or "")[:4]
+            year = deep_get(al, "date", "year") or (deep_get(al, "date", "isoString", default="") or "")[:4]
             meta = [s for s in [str(year) if year else "", al.get("label", "")] if s]
             header = f"{name} by {artist}" + (f" ({', '.join(meta)})" if meta else "")
-            tracks = [
-                _dig(t, "track", "name") for t in (_dig(al, "tracksV2", "items") or _dig(al, "tracks", "items") or [])
-            ]
+            track_items = deep_get(al, "tracksV2", "items") or deep_get(al, "tracks", "items") or []
+            tracks = [deep_get(t, "track", "name") for t in track_items]
             tracks = [n for n in tracks if n]
             return header + ("\n" + ", ".join(tracks) if tracks else "")
 
         if kind == "playlist":
-            pl = _dig(data, "data", "playlistV2", default={})
-            owner = _dig(pl, "ownerV2", "data", "name", default="?")
-            total = _dig(pl, "content", "totalCount", default="?")
+            pl = deep_get(data, "data", "playlistV2", default={})
+            owner = deep_get(pl, "ownerV2", "data", "name", default="?")
+            total = deep_get(pl, "content", "totalCount", default="?")
             lines = [f"{pl.get('name', '?')} by {owner} - {total} tracks"]
-            items = _dig(pl, "content", "items", default=[])
+            items = deep_get(pl, "content", "items", default=[])
             for item in items[:20]:
                 try:
-                    td = _dig(item, "itemV2", "data", default={})
+                    td = deep_get(item, "itemV2", "data", default={})
                     lines.append(_track_line(td.get("name", "?"), _first_artist(td.get("artists", {}))))
                 except (KeyError, TypeError, IndexError):
                     continue
@@ -334,11 +327,11 @@ def _fmt_info(result: dict) -> str:
             return "\n".join(lines)
 
         # track (default)
-        t = _dig(data, "data", "trackUnion", default={})
-        duration = _dig(t, "duration", "totalMilliseconds")
+        t = deep_get(data, "data", "trackUnion", default={})
+        duration = deep_get(t, "duration", "totalMilliseconds")
         playcount = t.get("playcount")
         line = _track_line(
-            t.get("name", "?"), _first_artist(t.get("firstArtist", {})), _dig(t, "albumOfTrack", "name", default="")
+            t.get("name", "?"), _first_artist(t.get("firstArtist", {})), deep_get(t, "albumOfTrack", "name", default="")
         )
         meta = [_ms_to_timestamp(duration) if duration else ""]
         if playcount:

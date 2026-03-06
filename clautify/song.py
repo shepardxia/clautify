@@ -201,32 +201,20 @@ class Song:
 
         self._stage_remove_song(uids)
 
-    def like_song(self, song_id: str, /) -> None:
+    def _library_op(self, song_id: str, operation: str) -> None:
         song_id = extract_spotify_id(song_id, "track")
-
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
         payload = self.base.graphql_payload(
-            "addToLibrary",
-            {
-                "libraryItemUris": [f"spotify:track:{song_id}"],
-            },
+            operation,
+            {"libraryItemUris": [f"spotify:track:{song_id}"]},
         )
         resp = self.base.client.post(url, json=payload, authenticate=True)
-
         if resp.fail:
-            raise SongError("Could not like song", error=resp.error.string)
+            verb = "like" if operation == "addToLibrary" else "unlike"
+            raise SongError(f"Could not {verb} song", error=resp.error.string)
+
+    def like_song(self, song_id: str, /) -> None:
+        self._library_op(song_id, "addToLibrary")
 
     def unlike_song(self, song_id: str, /) -> None:
-        song_id = extract_spotify_id(song_id, "track")
-
-        url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        payload = self.base.graphql_payload(
-            "removeFromLibrary",
-            {
-                "libraryItemUris": [f"spotify:track:{song_id}"],
-            },
-        )
-        resp = self.base.client.post(url, json=payload, authenticate=True)
-
-        if resp.fail:
-            raise SongError("Could not unlike song", error=resp.error.string)
+        self._library_op(song_id, "removeFromLibrary")

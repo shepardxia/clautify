@@ -16,18 +16,24 @@ __all__ = [
 ]
 
 
+class DictMixin:
+    """Mixin providing from_dict classmethod for dataclasses."""
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DictMixin":
+        valid_keys = {key: data[key] for key in cls.__annotations__.keys() if key in data}
+        return cls(**valid_keys)
+
+
 @dataclass
 class Config:
     logger: LoggerProtocol
     solver: CaptchaProtocol | None = field(default=None)
     client: TLSClient = field(default_factory=lambda: TLSClient("chrome_120", "", auto_retries=3))
 
-    def __str__(self) -> str:
-        return "Config()"
-
 
 @dataclass
-class Metadata:
+class Metadata(DictMixin):
     ORIGINAL_SESSION_ID: str | None = None
     album_title: str | None = None
     image_xlarge_url: str | None = None
@@ -46,14 +52,6 @@ class Metadata:
     track_player: str | None = None
     context_uri: str | None = None
 
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Metadata":
-        valid_keys = {key: data[key] for key in cls.__annotations__.keys() if key in data}
-        return cls(**valid_keys)
-
-    def __str__(self) -> str:
-        return "Metadata()"
-
 
 @dataclass
 class Track:
@@ -70,101 +68,50 @@ class Track:
         valid_keys = {key: data[key] for key in cls.__annotations__.keys() if key in data}
         return cls(**valid_keys)
 
-    def __str__(self) -> str:
-        return "Track()"
-
 
 @dataclass
-class Index:
+class Index(DictMixin):
     page: int | None = None
     track: int | None = None
 
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Index":
-        valid_keys = {key: data[key] for key in cls.__annotations__.keys() if key in data}
-        return cls(**valid_keys)
-
-    def __str__(self) -> str:
-        return "Index()"
-
 
 @dataclass
-class PlayOrigin:
+class PlayOrigin(DictMixin):
     feature_identifier: str | None = None
     feature_version: str | None = None
     referrer_identifier: str | None = None
     device_identifier: str | None = None
 
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PlayOrigin":
-        valid_keys = {key: data[key] for key in cls.__annotations__.keys() if key in data}
-        return cls(**valid_keys)
-
-    def __str__(self) -> str:
-        return "PlayOrigin()"
-
 
 @dataclass
-class Restrictions:
+class Restrictions(DictMixin):
     disallow_resuming_reasons: List[str] = field(default_factory=list)
     disallow_setting_playback_speed_reasons: List[str] = field(default_factory=list)
 
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Restrictions":
-        valid_keys = {key: data[key] for key in cls.__annotations__.keys() if key in data}
-        return cls(**valid_keys)
-
-    def __str__(self) -> str:
-        return "Restrictions()"
-
 
 @dataclass
-class Options:
+class Options(DictMixin):
     shuffling_context: bool | None = None
     repeating_context: bool | None = None
     repeating_track: bool | None = None
 
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Options":
-        valid_keys = {key: data[key] for key in cls.__annotations__.keys() if key in data}
-        return cls(**valid_keys)
-
-    def __str__(self) -> str:
-        return "Options()"
-
 
 @dataclass
-class PlaybackQuality:
+class PlaybackQuality(DictMixin):
     bitrate_level: str | None = None
     strategy: str | None = None
     target_bitrate_level: str | None = None
     target_bitrate_available: bool | None = None
 
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PlaybackQuality":
-        valid_keys = {key: data[key] for key in cls.__annotations__.keys() if key in data}
-        return cls(**valid_keys)
-
-    def __str__(self) -> str:
-        return "PlaybackQuality()"
-
 
 @dataclass
-class ContextMetadata:
+class ContextMetadata(DictMixin):
     image_url: str | None = None
     context_description: str | None = None
     context_owner: str | None = None
     playlist_number_of_tracks: str | None = None
     playlist_number_of_episodes: str | None = None
     player_arch: str | None = None
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ContextMetadata":
-        valid_keys = {key: data[key] for key in cls.__annotations__.keys() if key in data}
-        return cls(**valid_keys)
-
-    def __str__(self) -> str:
-        return "ContextMetadata()"
 
 
 @dataclass
@@ -217,38 +164,19 @@ class PlayerState:
             valid_keys["playback_quality"] = PlaybackQuality.from_dict(valid_keys.get("playback_quality", {}))
         return cls(**valid_keys)
 
-    def __str__(self) -> str:
-        return "PlayerState()"
-
 
 # Devices
 
 
 @dataclass
-class Hifi:
+class Hifi(DictMixin):
     device_supported: bool | None = None
-
-    @staticmethod
-    def from_dict(data: Dict[str, Any]) -> "Hifi":
-        valid_keys = {key: data[key] for key in Hifi.__annotations__.keys() if key in data}
-        return Hifi(**valid_keys)
-
-    def __str__(self) -> str:
-        return "Hifi()"
 
 
 @dataclass
-class AudioOutputDeviceInfo:
+class AudioOutputDeviceInfo(DictMixin):
     audio_output_device_type: str
     device_name: str
-
-    @staticmethod
-    def from_dict(data: Dict[str, Any]) -> "AudioOutputDeviceInfo":
-        valid_keys = {key: data[key] for key in AudioOutputDeviceInfo.__annotations__.keys() if key in data}
-        return AudioOutputDeviceInfo(**valid_keys)
-
-    def __str__(self) -> str:
-        return "AudioOutputDeviceInfo()"
 
 
 @dataclass
@@ -307,23 +235,12 @@ class Capabilities:
 
         return Capabilities(**valid_keys)  # type: ignore
 
-    def __str__(self) -> str:
-        return "Capabilities()"
-
 
 @dataclass
-class MetadataMap:
+class MetadataMap(DictMixin):
     device_address_mask: str
     debug_level: str
     tier1_port: str
-
-    @staticmethod
-    def from_dict(data: Dict[str, Any]) -> "MetadataMap":
-        valid_keys = {key: data[key] for key in MetadataMap.__annotations__.keys() if key in data}
-        return MetadataMap(**valid_keys)
-
-    def __str__(self) -> str:
-        return "MetadataMap()"
 
 
 @dataclass
@@ -363,9 +280,6 @@ class Device:
 
         return Device(**valid_keys)  # type: ignore
 
-    def __str__(self) -> str:
-        return "Device()"
-
 
 @dataclass
 class Devices:
@@ -376,6 +290,3 @@ class Devices:
     def from_dict(data: Dict[str, Any], active_device_id: str | None) -> "Devices":
         devices = {key: Device.from_dict(value) for key, value in data.items()}
         return Devices(devices=devices, active_device_id=active_device_id)
-
-    def __str__(self) -> str:
-        return "Devices()"

@@ -2,16 +2,29 @@ import ast
 import os
 import random
 import re
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from bs4 import BeautifulSoup
 
 __all__ = [
+    "deep_get",
     "extract_spotify_id",
     "random_hex_string",
     "parse_json_string",
     "random_nonce",
 ]
+
+
+def deep_get(data: Any, *keys: str, default: Any = None) -> Any:
+    """Safely traverse nested dicts by key path, returning default on any miss."""
+    for key in keys:
+        if isinstance(data, dict):
+            data = data.get(key)
+        else:
+            return default
+        if data is None:
+            return default
+    return data
 
 
 def extract_spotify_id(identifier: str, kind: str) -> str:

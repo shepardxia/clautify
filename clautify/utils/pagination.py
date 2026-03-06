@@ -3,15 +3,7 @@
 from collections.abc import Generator
 from typing import Any, Callable
 
-
-def _traverse(data: Any, path: list[str]) -> Any:
-    """Walk a nested dict by key path."""
-    for key in path:
-        if isinstance(data, dict):
-            data = data.get(key)
-        else:
-            return None
-    return data
+from clautify.utils.strings import deep_get
 
 
 def paginate(
@@ -35,8 +27,8 @@ def paginate(
     items_keys = items_path.split(".")
 
     first = query_fn(upper_limit, 0)
-    total_count = _traverse(first, total_keys) or 0
-    yield _traverse(first, items_keys)
+    total_count = deep_get(first, *total_keys) or 0
+    yield deep_get(first, *items_keys)
 
     if total_count <= upper_limit:
         return
@@ -44,5 +36,5 @@ def paginate(
     offset = upper_limit
     while offset < total_count:
         page = query_fn(upper_limit, offset)
-        yield _traverse(page, items_keys)
+        yield deep_get(page, *items_keys)
         offset += upper_limit
