@@ -59,7 +59,7 @@ def _resolve_track(track) -> str | None:
     if hasattr(track, "metadata"):
         m = track.metadata
         if m and m.title:
-            return m.title
+            return _track_line(m.title, m.artist_name or "", m.album_title or "")
         return None
     if isinstance(track, dict):
         return track.get("name") or track.get("title")
@@ -130,8 +130,9 @@ def _fmt_status(result: dict) -> str:
     if state and hasattr(state, "track") and state.track:
         m = state.track.metadata
         title = m.title if m else "?"
+        artist = m.artist_name if m else ""
         album = m.album_title if m else ""
-        line = _track_line(title, "", album)
+        line = _track_line(title, artist or "", album or "")
 
         if state.is_paused is True or state.is_playing is False:
             sections.append(f"Playing:\n{line} (paused)")

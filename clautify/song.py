@@ -44,7 +44,8 @@ class Song:
         Gets information about a specific song.
         """
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        params = self.base.graphql_params("getTrack", {"uri": f"spotify:track:{track_id}"})
+        uri = track_id if track_id.startswith("spotify:track:") else f"spotify:track:{track_id}"
+        params = self.base.graphql_params("getTrack", {"uri": uri})
         resp = self.base.client.post(url, params=params, authenticate=True)
 
         if resp.fail:

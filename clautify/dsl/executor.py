@@ -1,17 +1,22 @@
 """Spotify DSL executor — dispatches parsed command dicts to SpotAPI classes."""
 
+import logging
 import re
 from typing import Any, Dict, Optional
 
 from clautify.album import PublicAlbum
 from clautify.artist import Artist
+from clautify.dsl.format import _first_artist
 from clautify.exceptions import WebSocketError
 from clautify.login import Login
 from clautify.player import Player
 from clautify.playlist import PrivatePlaylist
 from clautify.song import Song
+from clautify.types.data import Metadata
 from clautify.utils.strings import deep_get
 from clautify.utils.strings import extract_spotify_id as _extract_id
+
+logger = logging.getLogger(__name__)
 
 
 class DSLError(Exception):
@@ -397,6 +402,34 @@ class SpotifyExecutor:
         self.player.renew_state()
         state = self.player.saved_state
         devices = self.player.saved_device_ids
+
+        # Resolve tracks with missing metadata titles
+        seen: set[str] = set()
+        all_tracks = [state.track] + state.next_tracks[:limit] + state.prev_tracks[:limit]
+        for track in all_tracks:
+            if not (track and track.uri and (not track.metadata or not track.metadata.title)):
+                continue
+            if track.uri in seen:
+                continue
+            seen.add(track.uri)
+            try:
+                info = self.song.get_track_info(track.uri)
+                t = deep_get(info, "data", "trackUnion", default={})
+                title = t.get("name")
+                if not title:
+                    continue
+                album = deep_get(t, "albumOfTrack", "name", default=None)
+                artist = _first_artist(t.get("firstArtist", {}), fallback=None)
+                if track.metadata is None:
+                    track.metadata = Metadata()
+                track.metadata.title = title
+                if album:
+                    track.metadata.album_title = album
+                if artist:
+                    track.metadata.artist_name = artist
+            except Exception:
+                logger.debug("Failed to resolve track metadata for %s", track.uri, exc_info=True)
+
         return {
             "status": "ok",
             "query": "status",

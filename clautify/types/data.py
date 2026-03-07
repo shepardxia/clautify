@@ -41,6 +41,7 @@ class Metadata(DictMixin):
     interaction_id: str | None = None
     title: str | None = None
     artist_uri: str | None = None
+    artist_name: str | None = None
     image_url: str | None = None
     entity_uri: str | None = None
     image_large_url: str | None = None
